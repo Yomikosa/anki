@@ -186,6 +186,16 @@ body {
   border-color: rgba(217, 107, 0, 0.3);
 }
 
+.deck-card--quiz:not(:disabled) {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(226, 236, 255, 0.84));
+  border-color: rgba(0, 23, 193, 0.28);
+}
+
+.deck-card--quiz .deck-card__count {
+  background: var(--dads-primary);
+  color: var(--dads-white);
+}
+
 .deck-card__top {
   width: 100%;
   display: flex;
@@ -231,6 +241,48 @@ body {
 }
 
 /* ==========================================================================
+   3モード切替セグメントコントロール（穴埋め | クイズ | 一問一答）
+   ========================================================================== */
+.mode-segmented {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 23, 193, 0.07);
+  border: 1px solid rgba(0, 23, 193, 0.14);
+}
+
+.mode-segmented__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dads-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.mode-segmented__btn:hover:not(.is-active) {
+  color: var(--dads-text-primary);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.mode-segmented__btn.is-active {
+  background: var(--dads-primary);
+  color: var(--dads-white);
+  box-shadow: 0 2px 8px rgba(0, 23, 193, 0.24);
+}
+
+/* ==========================================================================
    学習画面（ノイズを排した集中カード）
    ========================================================================== */
 .filter-pill {
@@ -269,6 +321,25 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.study-card__header-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.mode-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  background: var(--dads-primary);
+  color: var(--dads-white);
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .study-card__counter {
@@ -313,7 +384,20 @@ body {
 .formula-lens__top {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
+}
+
+.formula-lens__top--quiz {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.quiz-prompt-label {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--dads-primary);
 }
 
 .formula-lens__counter {
@@ -354,7 +438,7 @@ body {
 }
 
 /* ==========================================================================
-   スタサプ風 タップ穴埋めスロット（KaTeX数式内 & 解説テキスト共通）
+   スタサプ風 タップ穴埋め ＆ クイズスロット（KaTeX数式内）
    ========================================================================== */
 @keyframes clozePop {
   0% {
@@ -368,6 +452,22 @@ body {
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes quizShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  45% {
+    transform: translateX(5px);
+  }
+  70% {
+    transform: translateX(-3px);
   }
 }
 
@@ -410,6 +510,49 @@ body {
   box-shadow: 0 4px 12px rgba(217, 107, 0, 0.25);
 }
 
+/* クイズ出題中の現在フォーカススロット（デジタル庁ブルー＋発光ガラス） */
+.katex [data-cloze-state="active"] {
+  min-width: 2.8em;
+  padding: 0.1em 0.55em;
+  margin: 0.06em 0.12em;
+  background: linear-gradient(135deg, rgba(232, 240, 255, 0.98), rgba(204, 222, 255, 0.92));
+  border: 2.5px solid var(--dads-primary);
+  color: var(--dads-primary);
+  font-weight: 700;
+  box-shadow:
+    0 0 0 3px rgba(0, 23, 193, 0.16),
+    0 4px 12px rgba(0, 23, 193, 0.2);
+}
+
+.katex [data-cloze-state="active"] .text {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--dads-primary);
+}
+
+/* クイズの待機中スロット（番号付き・タップで飛び先指定可） */
+.katex [data-cloze-state="pending"] {
+  min-width: 2.2em;
+  padding: 0.1em 0.45em;
+  margin: 0.06em 0.12em;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1.5px dashed var(--dads-border-strong);
+  color: var(--dads-text-secondary);
+  font-weight: 700;
+}
+
+.katex [data-cloze-state="pending"] .text {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--dads-text-secondary);
+}
+
+.katex [data-cloze-state="pending"]:hover {
+  border-color: var(--dads-primary);
+  color: var(--dads-primary);
+  background: rgba(238, 243, 255, 0.9);
+}
+
 .katex [data-cloze-state="revealed"] {
   padding: 0.08em 0.4em;
   margin: 0.04em 0.1em;
@@ -425,12 +568,14 @@ body {
   background: rgba(209, 238, 223, 0.95);
 }
 
-/* 分数（\frac）内の穴埋めバッジと分数線の余白調整 */
+/* 分数（\frac）内の穴埋め・クイズバッジと分数線の余白調整 */
 .katex .mfrac .frac-line {
   border-bottom-width: 0.065em;
 }
 
-.katex .mfrac [data-cloze-state="hidden"] {
+.katex .mfrac [data-cloze-state="hidden"],
+.katex .mfrac [data-cloze-state="active"],
+.katex .mfrac [data-cloze-state="pending"] {
   padding: 0.02em 0.48em;
   margin: 0 0.08em;
   line-height: 1.1;
@@ -456,6 +601,125 @@ body {
 
 .katex .mfrac > .vlist-t > .vlist-r > .vlist > span:last-child [data-cloze-state="hidden"]:hover {
   transform: translateY(-6px);
+}
+
+/* ==========================================================================
+   4択穴埋めクイズ 選択肢グリッド
+   ========================================================================== */
+.quiz-choices-section {
+  margin-top: var(--space-4);
+}
+
+.quiz-choices-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.quiz-choice-btn {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 60px;
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1.5px solid rgba(0, 23, 193, 0.22);
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.94) 0%,
+    rgba(244, 248, 255, 0.84) 100%
+  );
+  color: var(--dads-text-primary);
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 23, 193, 0.06);
+  transition:
+    transform var(--transition-fast),
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+@media (hover: hover) {
+  .quiz-choice-btn:not(:disabled):hover {
+    border-color: var(--dads-primary);
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(232, 240, 255, 0.92) 100%
+    );
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(0, 23, 193, 0.14);
+  }
+}
+
+.quiz-choice-btn__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 23, 193, 0.1);
+  color: var(--dads-primary);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.quiz-choice-btn__content {
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.quiz-choice-btn__state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quiz-choice-btn.is-correct {
+  border-color: var(--dads-success);
+  border-width: 2px;
+  background: var(--glass-bg-cloze-revealed);
+  color: var(--dads-success-dark);
+  box-shadow: 0 4px 14px rgba(25, 122, 75, 0.2);
+}
+
+.quiz-choice-btn.is-correct .quiz-choice-btn__key {
+  background: var(--dads-success);
+  color: var(--dads-white);
+}
+
+.quiz-choice-btn.is-correct .quiz-choice-btn__state {
+  color: var(--dads-success);
+}
+
+.quiz-choice-btn.is-wrong {
+  border-color: var(--dads-error);
+  background: linear-gradient(145deg, rgba(255, 245, 245, 0.96), rgba(255, 230, 230, 0.88));
+  color: var(--dads-error-dark);
+  opacity: 0.78;
+  cursor: not-allowed;
+  animation: quizShake 280ms ease;
+}
+
+.quiz-choice-btn.is-wrong .quiz-choice-btn__key {
+  background: var(--dads-error);
+  color: var(--dads-white);
+}
+
+.quiz-choice-btn.is-wrong .quiz-choice-btn__state {
+  color: var(--dads-error);
 }
 
 /* 解説テキスト内の穴埋めボタン */

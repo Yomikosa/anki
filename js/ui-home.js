@@ -136,6 +136,20 @@ export class HomeView {
           </div>
 
           <div class="home-deck-grid">
+            <button
+              type="button"
+              id="home-quiz-deck-btn"
+              class="deck-card deck-card--quiz glass-panel"
+              data-deck-quiz="true"
+              ${stats.total === 0 ? 'disabled' : ''}
+            >
+              <div class="deck-card__top">
+                <span class="deck-card__title">4択穴埋めクイズ</span>
+                <span class="deck-card__count">クイズ</span>
+              </div>
+              <span class="deck-card__sub">選択肢から正しい数式を選んで公式を完成</span>
+            </button>
+
             <button type="button" class="deck-card glass-panel" data-deck-status="all">
               <div class="deck-card__top">
                 <span class="deck-card__title">すべての公式</span>
@@ -212,6 +226,15 @@ export class HomeView {
 
     this.root.querySelector('#home-goto-manage-btn')?.addEventListener('click', () => {
       this.callbacks.onNavigateToManage();
+    });
+
+    this.root.querySelector('[data-deck-quiz]')?.addEventListener('click', () => {
+      this.callbacks.onStartStudy({
+        status: 'all',
+        subject: 'all',
+        shuffle: false,
+        mode: 'quiz',
+      });
     });
 
     this.root.querySelectorAll('[data-deck-status]').forEach((btn) => {

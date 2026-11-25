@@ -1,17 +1,27 @@
 /**
- * 「学習する（カード・穴埋め）」画面コントローラー
- * - PC UI: 1行のスリムなツールバー + 集中できる学習カード
- * - スマホ UI: 画面上部に余計なUIを置かずカードを即表示。条件・モード切替はボトムシートで操作
+ * 「学習する（穴埋め・選択クイズ・一問一答）」画面コントローラー
+ * - PC UI: 1行のスリムなツールバー（3モード切替＋絞り込み）＋集中カード
+ * - スマホ UI: カードを最上部に即表示。モード切替・絞り込みはボトムシートへ収納
  */
 
-import { countCardClozeSlots } from './cloze.js';
+import { countCardClozeSlots, tokenizeCloze } from './cloze.js';
 import { renderKatexFormula, renderRichTextExplanation } from './katex-renderer.js';
+import { generateQuizChoices } from './quiz-generator.js';
 import {
   ICONS,
   STATUS_META,
   STATUS_ORDER,
+  createNotificationBanner,
   escapeHtml,
 } from './ui-helpers.js';
+
+const MODE_LABELS = {
+  cloze: '穴埋め',
+  quiz: 'クイズ',
+  qa: '一問一答',
+};
+
+const CHOICE_KEYS = ['A', 'B', 'C', 'D'];
 
 export class StudyView {
   /**
@@ -30,13 +40,25 @@ export class StudyView {
 
     this.statusFilter = 'all';
     this.subjectFilter = 'all';
-    this.studyMode = store.getStudyMode(); // 'cloze' | 'qa'
+    this.studyMode = store.getStudyMode(); // 'cloze' | 'quiz' | 'qa'
     this.shuffledOrder = null;
     this.currentCardId = null;
 
+    // 穴埋め / 一問一答モードの一時状態
     this.revealedSet = new Set();
     this.qaAnswerVisible = false;
     this.justToggledSlot = null;
+
+    // 選択式クイズモードの一時状態
+    this.quizCardId = null;
+    this.quizSlots = [];
+    this.quizSolvedSet = new Set();
+    this.quizActiveSlot = null;
+    this.quizChoicesBySlot = new Map();
+    this.quizWrongChoiceIds = new Set();
+    this.quizLockedCorrectId = null;
+    this.quizMistakes = 0;
+    this.quizAdvanceTimer = null;
 
     this.optionsSheet = document.getElementById('study-options-sheet');
     this.render();
@@ -44,16 +66,18 @@ export class StudyView {
 
   /**
    * ホーム画面などのクイックデッキから条件付きで学習開始
-   * @param {{ status?: string, subject?: string, shuffle?: boolean }} [opts]
+   * @param {{ status?: string, subject?: string, shuffle?: boolean, mode?: 'cloze'|'quiz'|'qa' }} [opts]
    */
   startSession(opts = {}) {
     this.statusFilter = opts.status ?? 'all';
     this.subjectFilter = opts.subject ?? 'all';
+    if (opts.mode && (opts.mode === 'cloze' || opts.mode === 'quiz' || opts.mode === 'qa')) {
+      this.studyMode = opts.mode;
+      this.store.setStudyMode(opts.mode);
+    }
     this.shuffledOrder = null;
     this.currentCardId = null;
-    this.revealedSet = new Set();
-    this.qaAnswerVisible = false;
-    this.justToggledSlot = null;
+    this._resetCardSessionState();
 
     if (opts.shuffle) {
       this._generateShuffleOrder();
@@ -80,9 +104,7 @@ export class StudyView {
     }
     this.shuffledOrder = null;
     this.currentCardId = cardId;
-    this.revealedSet = new Set();
-    this.qaAnswerVisible = false;
-    this.justToggledSlot = null;
+    this._resetCardSessionState();
     this.render();
   }
 
@@ -93,6 +115,77 @@ export class StudyView {
     if (!this.optionsSheet) return;
     this._renderOptionsSheet();
     this.optionsSheet.showModal();
+  }
+
+  _clearQuizTimer() {
+    if (this.quizAdvanceTimer) {
+      clearTimeout(this.quizAdvanceTimer);
+      this.quizAdvanceTimer = null;
+    }
+  }
+
+  _resetCardSessionState() {
+    this._clearQuizTimer();
+    this.revealedSet = new Set();
+    this.qaAnswerVisible = false;
+    this.justToggledSlot = null;
+
+    this.quizCardId = null;
+    this.quizSlots = [];
+    this.quizSolvedSet = new Set();
+    this.quizActiveSlot = null;
+    this.quizChoicesBySlot = new Map();
+    this.quizWrongChoiceIds = new Set();
+    this.quizLockedCorrectId = null;
+    this.quizMistakes = 0;
+  }
+
+  /**
+   * 現在のカードに対してクイズ用スロットと4選択肢を初期化（同一カード内ではキャッシュ維持）
+   * @param {Object} card
+   * @param {boolean} [forceReset=false]
+   */
+  _ensureQuizForCard(card, forceReset = false) {
+    if (!forceReset && this.quizCardId === card.id) {
+      return;
+    }
+    this._clearQuizTimer();
+    this.quizCardId = card.id;
+    this.quizSolvedSet = new Set();
+    this.quizChoicesBySlot = new Map();
+    this.quizWrongChoiceIds = new Set();
+    this.quizLockedCorrectId = null;
+    this.quizMistakes = 0;
+    this.justToggledSlot = null;
+
+    const { tokens } = tokenizeCloze(card.formula || '', 0);
+    this.quizSlots = tokens
+      .filter((t) => t.type === 'cloze')
+      .map((t) => ({ index: t.index, content: t.content, kind: 'math' }));
+
+    const allCards = this.store.getAll();
+    for (const slot of this.quizSlots) {
+      const choices = generateQuizChoices({
+        answer: slot.content,
+        kind: slot.kind,
+        formula: card.formula,
+        allCards,
+        choiceCount: 4,
+      });
+      this.quizChoicesBySlot.set(slot.index, choices);
+    }
+
+    this.quizActiveSlot = this.quizSlots.length > 0 ? this.quizSlots[0].index : null;
+  }
+
+  _setMode(nextMode) {
+    if (this.studyMode === nextMode) return;
+    if (nextMode !== 'cloze' && nextMode !== 'quiz' && nextMode !== 'qa') return;
+    this.studyMode = nextMode;
+    this.store.setStudyMode(nextMode);
+    this._resetCardSessionState();
+    this.render();
+    this.callbacks.announce(`${MODE_LABELS[nextMode]}モードに切り替えました。`);
   }
 
   _generateShuffleOrder() {
@@ -134,33 +227,15 @@ export class StudyView {
     if (foundIdx !== -1) return foundIdx;
 
     this.currentCardId = filteredCards[0].id;
-    this.revealedSet = new Set();
-    this.qaAnswerVisible = false;
-    this.justToggledSlot = null;
+    this._resetCardSessionState();
     return 0;
   }
 
   _switchCard(nextCard) {
     if (!nextCard) return;
     this.currentCardId = nextCard.id;
-    this.revealedSet = new Set();
-    this.qaAnswerVisible = false;
-    this.justToggledSlot = null;
+    this._resetCardSessionState();
     this.render();
-  }
-
-  _toggleMode() {
-    this.studyMode = this.studyMode === 'cloze' ? 'qa' : 'cloze';
-    this.store.setStudyMode(this.studyMode);
-    this.revealedSet = new Set();
-    this.qaAnswerVisible = false;
-    this.justToggledSlot = null;
-    this.render();
-    this.callbacks.announce(
-      this.studyMode === 'cloze'
-        ? '穴埋めモード（スタサプ風）に切り替えました。'
-        : '通常一問一答モードに切り替えました。'
-    );
   }
 
   _handleShuffle() {
@@ -204,8 +279,82 @@ export class StudyView {
     this.callbacks.announce('すべての穴埋めを隠しました。');
   }
 
+  _handleQuizSelectSlot(slotIndex) {
+    if (this.quizLockedCorrectId !== null) return;
+    if (this.quizSolvedSet.has(slotIndex)) return;
+    this.quizActiveSlot = slotIndex;
+    this.quizWrongChoiceIds = new Set();
+    this.justToggledSlot = null;
+    this._renderCardDynamicContent();
+  }
+
+  _handleQuizChoicePick(choice) {
+    if (this.quizLockedCorrectId !== null) return;
+    if (this.quizActiveSlot === null) return;
+    if (this.quizWrongChoiceIds.has(choice.id)) return;
+
+    if (choice.isCorrect) {
+      const solvedIdx = this.quizActiveSlot;
+      this.quizSolvedSet.add(solvedIdx);
+      this.quizLockedCorrectId = choice.id;
+      this.justToggledSlot = solvedIdx;
+      this._renderCardDynamicContent();
+      this.callbacks.announce(`穴埋め ${solvedIdx + 1} に正解しました。`);
+
+      this._clearQuizTimer();
+      this.quizAdvanceTimer = setTimeout(() => {
+        this.quizAdvanceTimer = null;
+        this.quizLockedCorrectId = null;
+        this.quizWrongChoiceIds = new Set();
+        this.justToggledSlot = null;
+
+        // 次の未解答スロットを探す
+        const nextSlot = this.quizSlots.find((s) => !this.quizSolvedSet.has(s.index));
+        this.quizActiveSlot = nextSlot ? nextSlot.index : null;
+        this._renderCardDynamicContent();
+
+        if (!nextSlot) {
+          this.callbacks.announce(
+            this.quizMistakes === 0
+              ? '全問正解で公式を完成させました。'
+              : `公式が完成しました。ミスは${this.quizMistakes}回でした。`
+          );
+        }
+      }, 480);
+    } else {
+      this.quizMistakes++;
+      this.quizWrongChoiceIds.add(choice.id);
+      this._renderCardDynamicContent();
+      this.callbacks.announce('不正解です。別の選択肢を選んでください。');
+    }
+  }
+
   _hasActiveFilter() {
     return this.statusFilter !== 'all' || this.subjectFilter !== 'all';
+  }
+
+  _renderModeSegmentedHtml(idPrefix) {
+    return `
+      <div class="mode-segmented" role="radiogroup" aria-label="学習モードの切り替え">
+        ${['cloze', 'quiz', 'qa']
+          .map((mode) => {
+            const checked = this.studyMode === mode;
+            return `
+              <button
+                type="button"
+                id="${idPrefix}-${mode}"
+                class="mode-segmented__btn ${checked ? 'is-active' : ''}"
+                role="radio"
+                aria-checked="${checked ? 'true' : 'false'}"
+                data-select-mode="${mode}"
+              >
+                ${MODE_LABELS[mode]}
+              </button>
+            `;
+          })
+          .join('')}
+      </div>
+    `;
   }
 
   render() {
@@ -218,10 +367,8 @@ export class StudyView {
     const filteredCards = this._getFilteredCards();
     const currentIndex = this._resolveCurrentIndex(filteredCards);
     const currentCard = currentIndex >= 0 ? filteredCards[currentIndex] : null;
-    const isClozeMode = this.studyMode === 'cloze';
     const hasFilter = this._hasActiveFilter();
 
-    // スマホトップバー用のカウンター・フィルタ状態を通知
     this.callbacks.onStudyMetaChange?.({
       counterText: currentCard ? `${currentIndex + 1} / ${filteredCards.length}` : '0件',
       hasActiveFilter: hasFilter,
@@ -230,29 +377,16 @@ export class StudyView {
 
     this.root.innerHTML = `
       <div class="study-layout">
-        <!-- PC専用：スリムな1行ツールバー（スマホでは非表示） -->
-        <div class="study-toolbar-pc glass-panel" aria-label="学習条件とモード設定">
-          <button
-            type="button"
-            id="study-mode-switch-pc"
-            class="dads-switch dads-switch--compact"
-            role="switch"
-            aria-checked="${isClozeMode ? 'true' : 'false'}"
-          >
-            <span class="dads-switch__track" aria-hidden="true">
-              <span class="dads-switch__thumb"></span>
-            </span>
-            <span class="dads-switch__label">
-              ${isClozeMode ? '穴埋めモード' : '一問一答モード'}
-            </span>
-          </button>
+        <!-- PC専用：スリムな1行ツールバー（3モード切替＋絞り込み） -->
+        <div class="study-toolbar-pc glass-panel" aria-label="学習モードと絞り込み">
+          ${this._renderModeSegmentedHtml('pc-mode')}
 
           <div class="study-toolbar-pc__right">
             <label for="study-status-filter-pc" class="sr-only">ステータスで絞り込み</label>
             <select id="study-status-filter-pc" class="dads-select dads-select--compact">
               <option value="all" ${this.statusFilter === 'all' ? 'selected' : ''}>すべて（${stats.total}）</option>
               <option value="unlearned" ${this.statusFilter === 'unlearned' ? 'selected' : ''}>未習得（${stats.unlearned}）</option>
-              <option value="review" ${this.statusFilter === 'review' ? 'selected' : ''}>復習が必要（${stats.review}）</option>
+              <option value="review" ${this.statusFilter === 'review' ? 'selected' : ''}>要復習（${stats.review}）</option>
               <option value="mastered" ${this.statusFilter === 'mastered' ? 'selected' : ''}>習得済み（${stats.mastered}）</option>
             </select>
 
@@ -276,7 +410,6 @@ export class StudyView {
               aria-label="カードの順番をシャッフル"
             >
               ${ICONS.shuffle}
-              <span>シャッフル</span>
             </button>
           </div>
         </div>
@@ -287,7 +420,7 @@ export class StudyView {
             ? `
           <div class="study-mobile-active-filter">
             <span class="study-mobile-active-filter__text">
-              絞り込み中：${this.statusFilter !== 'all' ? STATUS_META[this.statusFilter].label : ''}${this.statusFilter !== 'all' && this.subjectFilter !== 'all' ? ' / ' : ''}${this.subjectFilter !== 'all' ? escapeHtml(this.subjectFilter) : ''}
+              絞り込み：${this.statusFilter !== 'all' ? STATUS_META[this.statusFilter].label : ''}${this.statusFilter !== 'all' && this.subjectFilter !== 'all' ? ' / ' : ''}${this.subjectFilter !== 'all' ? escapeHtml(this.subjectFilter) : ''}
             </span>
             <button type="button" id="study-mobile-clear-filter" class="dads-button" data-type="text" data-size="sm">
               解除
@@ -346,7 +479,14 @@ export class StudyView {
     return `
       <article class="study-card glass-panel" aria-labelledby="study-card-title">
         <header class="study-card__header">
-          <span class="dads-chip-label" data-style="filled-1" data-color="blue">${escapeHtml(categoryText)}</span>
+          <div class="study-card__header-left">
+            <span class="dads-chip-label" data-style="filled-1" data-color="blue">${escapeHtml(categoryText)}</span>
+            ${
+              this.studyMode === 'quiz'
+                ? '<span class="mode-badge-pill">4択クイズ</span>'
+                : ''
+            }
+          </div>
           <span class="study-card__counter" aria-label="全${totalFiltered}件中${currentIndex + 1}件目">
             ${currentIndex + 1} / ${totalFiltered}
           </span>
@@ -414,26 +554,155 @@ export class StudyView {
     const card = this.store.getById(this.currentCardId);
     if (!dynamicEl || !card) return;
 
-    const isClozeMode = this.studyMode === 'cloze';
+    if (this.studyMode === 'cloze') {
+      this._renderClozeMode(dynamicEl, card);
+    } else if (this.studyMode === 'quiz') {
+      this._renderQuizMode(dynamicEl, card);
+    } else {
+      this._renderQaMode(dynamicEl, card);
+    }
+  }
+
+  /**
+   * 1. スタサプ風タップ穴埋めモード
+   */
+  _renderClozeMode(dynamicEl, card) {
     const totalSlots = countCardClozeSlots(card);
+    const revealedCount = this.revealedSet.size;
+    const allRevealed = totalSlots > 0 && revealedCount >= totalSlots;
+    const noneRevealed = revealedCount === 0;
 
-    if (isClozeMode) {
-      const revealedCount = this.revealedSet.size;
-      const allRevealed = totalSlots > 0 && revealedCount >= totalSlots;
-      const noneRevealed = revealedCount === 0;
+    dynamicEl.innerHTML = `
+      <div class="formula-lens" aria-label="公式の数式表示エリア">
+        ${
+          totalSlots > 0
+            ? `<div class="formula-lens__top">
+                 <span class="formula-lens__counter" aria-live="polite">${revealedCount} / ${totalSlots} 表示中</span>
+               </div>`
+            : ''
+        }
+        <div id="study-formula-render" class="formula-lens__math"></div>
+      </div>
 
-      dynamicEl.innerHTML = `
-        <div class="formula-lens" aria-label="公式の数式表示エリア">
-          ${
-            totalSlots > 0
-              ? `<div class="formula-lens__top">
-                   <span class="formula-lens__counter" aria-live="polite">${revealedCount} / ${totalSlots} 表示中</span>
-                 </div>`
-              : ''
-          }
-          <div id="study-formula-render" class="formula-lens__math"></div>
+      ${
+        card.explanation
+          ? `
+        <div class="explanation-block">
+          <h3 class="explanation-block__heading">解説</h3>
+          <div id="study-explanation-render" class="explanation-block__body"></div>
         </div>
+      `
+          : ''
+      }
 
+      ${
+        totalSlots > 0
+          ? `
+        <div class="study-bulk-actions" role="group" aria-label="穴埋めの一括操作">
+          <button
+            type="button"
+            id="study-reveal-all-btn"
+            class="dads-button"
+            data-type="outline"
+            data-size="sm"
+            ${allRevealed ? 'disabled' : ''}
+          >
+            ${ICONS.eye}
+            <span>すべて開く</span>
+          </button>
+          <button
+            type="button"
+            id="study-hide-all-btn"
+            class="dads-button"
+            data-type="outline"
+            data-size="sm"
+            ${noneRevealed ? 'disabled' : ''}
+          >
+            ${ICONS.eyeOff}
+            <span>すべて隠す</span>
+          </button>
+        </div>
+      `
+          : ''
+      }
+    `;
+
+    const formulaRes = renderKatexFormula(
+      dynamicEl.querySelector('#study-formula-render'),
+      card.formula,
+      {
+        displayMode: true,
+        mode: 'cloze',
+        revealedSet: this.revealedSet,
+        startSlotIndex: 0,
+        justToggledSlot: this.justToggledSlot,
+        onToggleSlot: (idx, viaKb) => this._handleToggleSlot(idx, viaKb),
+      }
+    );
+
+    const explanationEl = dynamicEl.querySelector('#study-explanation-render');
+    if (explanationEl && card.explanation) {
+      renderRichTextExplanation(explanationEl, card.explanation, {
+        mode: 'cloze',
+        revealedSet: this.revealedSet,
+        startSlotIndex: formulaRes.nextSlotIndex,
+        justToggledSlot: this.justToggledSlot,
+        onToggleSlot: (idx, viaKb) => this._handleToggleSlot(idx, viaKb),
+      });
+    }
+
+    dynamicEl
+      .querySelector('#study-reveal-all-btn')
+      ?.addEventListener('click', () => this._handleRevealAll(totalSlots));
+    dynamicEl
+      .querySelector('#study-hide-all-btn')
+      ?.addEventListener('click', () => this._handleHideAll());
+  }
+
+  /**
+   * 2. 選択式穴埋めクイズモード（NEW）
+   */
+  _renderQuizMode(dynamicEl, card) {
+    this._ensureQuizForCard(card, false);
+
+    if (this.quizSlots.length === 0) {
+      dynamicEl.innerHTML = `
+        <div class="qa-hidden-box">
+          <p class="qa-hidden-box__text">この公式の数式には穴埋め箇所（<code>{{ }}</code>）が設定されていません。</p>
+          <button type="button" id="quiz-switch-qa-btn" class="dads-button" data-type="outline" data-size="sm">
+            一問一答モードで表示する
+          </button>
+        </div>
+      `;
+      dynamicEl
+        .querySelector('#quiz-switch-qa-btn')
+        ?.addEventListener('click', () => this._setMode('qa'));
+      return;
+    }
+
+    const total = this.quizSlots.length;
+    const solved = this.quizSolvedSet.size;
+    const isCompleted = solved >= total && this.quizLockedCorrectId === null;
+
+    dynamicEl.innerHTML = `
+      <div class="formula-lens ${isCompleted ? 'formula-lens--revealed' : ''}" aria-label="クイズ出題中の数式">
+        <div class="formula-lens__top formula-lens__top--quiz">
+          <span class="quiz-prompt-label">
+            ${
+              isCompleted
+                ? '公式が完成しました'
+                : `青枠の (${(this.quizActiveSlot ?? 0) + 1}) に当てはまるものを選択`
+            }
+          </span>
+          <span class="formula-lens__counter" aria-live="polite">${solved} / ${total} 正解</span>
+        </div>
+        <div id="study-formula-render" class="formula-lens__math"></div>
+      </div>
+
+      ${
+        isCompleted
+          ? `
+        <div id="quiz-result-slot" class="banner-slot"></div>
         ${
           card.explanation
             ? `
@@ -444,126 +713,199 @@ export class StudyView {
         `
             : ''
         }
+      `
+          : `
+        <div class="quiz-choices-section" aria-label="選択肢">
+          <div id="quiz-choices-grid" class="quiz-choices-grid"></div>
+        </div>
+      `
+      }
+    `;
 
+    // 数式本体を描画（active=青枠 / revealed=緑枠 / pending=待機番号）
+    renderKatexFormula(dynamicEl.querySelector('#study-formula-render'), card.formula, {
+      displayMode: true,
+      mode: 'quiz',
+      revealedSet: this.quizSolvedSet,
+      activeSlotIndex: this.quizActiveSlot,
+      justToggledSlot: this.justToggledSlot,
+      onToggleSlot: (idx) => this._handleQuizSelectSlot(idx),
+    });
+
+    if (isCompleted) {
+      // 完了バナー（ワンタップでステータス反映＆リトライ可能）
+      const resultSlot = dynamicEl.querySelector('#quiz-result-slot');
+      const isPerfect = this.quizMistakes === 0;
+      const actions = [];
+
+      if (isPerfect && card.status !== 'mastered') {
+        actions.push({
+          label: '「習得済み」にする',
+          variant: 'solid-fill',
+          onClick: () => {
+            this.store.setStatus(card.id, 'mastered');
+            this.callbacks.announce('ステータスを「習得済み」に更新しました。');
+          },
+        });
+      } else if (!isPerfect && card.status !== 'review') {
+        actions.push({
+          label: '「復習が必要」にする',
+          variant: 'solid-fill',
+          onClick: () => {
+            this.store.setStatus(card.id, 'review');
+            this.callbacks.announce('ステータスを「復習が必要」に更新しました。');
+          },
+        });
+      }
+
+      actions.push({
+        label: 'もう一度挑戦',
+        variant: 'outline',
+        onClick: () => {
+          this._ensureQuizForCard(card, true);
+          this._renderCardDynamicContent();
+          this.callbacks.announce('クイズを最初からやり直します。');
+        },
+      });
+
+      resultSlot.appendChild(
+        createNotificationBanner({
+          type: isPerfect ? 'success' : 'warning',
+          heading: isPerfect
+            ? '全問正解！（パーフェクト）'
+            : `穴埋め完了（ミス ${this.quizMistakes}回）`,
+          messages: isPerfect
+            ? '1回も間違えずに公式を完成できました。'
+            : '間違えた箇所を復習して、ミスなしで解けるようにしましょう。',
+          actions,
+        })
+      );
+
+      const explanationEl = dynamicEl.querySelector('#study-explanation-render');
+      if (explanationEl && card.explanation) {
+        renderRichTextExplanation(explanationEl, card.explanation, { mode: 'full' });
+      }
+      return;
+    }
+
+    // 4択ボタングリッドを描画
+    const gridEl = dynamicEl.querySelector('#quiz-choices-grid');
+    const choices = this.quizChoicesBySlot.get(this.quizActiveSlot) || [];
+
+    choices.forEach((choice, idx) => {
+      const isWrong = this.quizWrongChoiceIds.has(choice.id);
+      const isCorrectLocked = this.quizLockedCorrectId === choice.id;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `quiz-choice-btn ${isCorrectLocked ? 'is-correct' : ''} ${isWrong ? 'is-wrong' : ''}`;
+      btn.dataset.choiceId = choice.id;
+      btn.dataset.choiceCorrect = choice.isCorrect ? 'true' : 'false';
+      if (isWrong || this.quizLockedCorrectId !== null) {
+        btn.disabled = true;
+      }
+
+      const keySpan = document.createElement('span');
+      keySpan.className = 'quiz-choice-btn__key';
+      keySpan.setAttribute('aria-hidden', 'true');
+      keySpan.textContent = CHOICE_KEYS[idx] || String(idx + 1);
+
+      const contentSpan = document.createElement('span');
+      contentSpan.className = 'quiz-choice-btn__content';
+
+      if (choice.kind === 'math' && typeof window !== 'undefined' && window.katex) {
+        try {
+          window.katex.render(choice.value, contentSpan, {
+            displayMode: false,
+            throwOnError: false,
+            strict: false,
+          });
+        } catch {
+          contentSpan.textContent = choice.value;
+        }
+      } else {
+        contentSpan.textContent = choice.value;
+      }
+
+      const stateIcon = document.createElement('span');
+      stateIcon.className = 'quiz-choice-btn__state';
+      stateIcon.setAttribute('aria-hidden', 'true');
+      if (isCorrectLocked) {
+        stateIcon.innerHTML = ICONS.check;
+      } else if (isWrong) {
+        stateIcon.innerHTML = ICONS.close;
+      }
+
+      btn.appendChild(keySpan);
+      btn.appendChild(contentSpan);
+      btn.appendChild(stateIcon);
+
+      btn.addEventListener('click', () => this._handleQuizChoicePick(choice));
+      gridEl.appendChild(btn);
+    });
+  }
+
+  /**
+   * 3. 通常一問一答モード
+   */
+  _renderQaMode(dynamicEl, card) {
+    dynamicEl.innerHTML = `
+      <div class="qa-stage">
         ${
-          totalSlots > 0
+          this.qaAnswerVisible
             ? `
-          <div class="study-bulk-actions" role="group" aria-label="穴埋めの一括操作">
-            <button
-              type="button"
-              id="study-reveal-all-btn"
-              class="dads-button"
-              data-type="outline"
-              data-size="sm"
-              ${allRevealed ? 'disabled' : ''}
-            >
-              ${ICONS.eye}
-              <span>すべて開く</span>
-            </button>
-            <button
-              type="button"
-              id="study-hide-all-btn"
-              class="dads-button"
-              data-type="outline"
-              data-size="sm"
-              ${noneRevealed ? 'disabled' : ''}
-            >
+          <div class="formula-lens formula-lens--revealed" aria-label="解答の数式">
+            <div class="formula-lens__top">
+              <span class="qa-answer-label">解答</span>
+            </div>
+            <div id="study-formula-render" class="formula-lens__math"></div>
+          </div>
+          ${
+            card.explanation
+              ? `
+            <div class="explanation-block">
+              <h3 class="explanation-block__heading">解説</h3>
+              <div id="study-explanation-render" class="explanation-block__body"></div>
+            </div>
+          `
+              : ''
+          }
+          <div class="study-bulk-actions">
+            <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="outline" data-size="sm">
               ${ICONS.eyeOff}
-              <span>すべて隠す</span>
+              <span>答えを隠す</span>
             </button>
           </div>
         `
-            : ''
+            : `
+          <div class="qa-hidden-box">
+            <p class="qa-hidden-box__text">公式を思い浮かべてから確認しましょう</p>
+            <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="solid-fill" data-size="md">
+              ${ICONS.eye}
+              <span>答えを表示する</span>
+            </button>
+          </div>
+        `
         }
-      `;
+      </div>
+    `;
 
-      const formulaEl = dynamicEl.querySelector('#study-formula-render');
-      const formulaRes = renderKatexFormula(formulaEl, card.formula, {
+    if (this.qaAnswerVisible) {
+      renderKatexFormula(dynamicEl.querySelector('#study-formula-render'), card.formula, {
         displayMode: true,
-        mode: 'cloze',
-        revealedSet: this.revealedSet,
-        startSlotIndex: 0,
-        justToggledSlot: this.justToggledSlot,
-        onToggleSlot: (idx, viaKb) => this._handleToggleSlot(idx, viaKb),
+        mode: 'full',
       });
 
       const explanationEl = dynamicEl.querySelector('#study-explanation-render');
       if (explanationEl && card.explanation) {
-        renderRichTextExplanation(explanationEl, card.explanation, {
-          mode: 'cloze',
-          revealedSet: this.revealedSet,
-          startSlotIndex: formulaRes.nextSlotIndex,
-          justToggledSlot: this.justToggledSlot,
-          onToggleSlot: (idx, viaKb) => this._handleToggleSlot(idx, viaKb),
-        });
+        renderRichTextExplanation(explanationEl, card.explanation, { mode: 'full' });
       }
-
-      dynamicEl
-        .querySelector('#study-reveal-all-btn')
-        ?.addEventListener('click', () => this._handleRevealAll(totalSlots));
-      dynamicEl
-        .querySelector('#study-hide-all-btn')
-        ?.addEventListener('click', () => this._handleHideAll());
-    } else {
-      dynamicEl.innerHTML = `
-        <div class="qa-stage">
-          ${
-            this.qaAnswerVisible
-              ? `
-            <div class="formula-lens formula-lens--revealed" aria-label="解答の数式">
-              <div class="formula-lens__top">
-                <span class="qa-answer-label">解答</span>
-              </div>
-              <div id="study-formula-render" class="formula-lens__math"></div>
-            </div>
-            ${
-              card.explanation
-                ? `
-              <div class="explanation-block">
-                <h3 class="explanation-block__heading">解説</h3>
-                <div id="study-explanation-render" class="explanation-block__body"></div>
-              </div>
-            `
-                : ''
-            }
-            <div class="study-bulk-actions">
-              <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="outline" data-size="sm">
-                ${ICONS.eyeOff}
-                <span>答えを隠す</span>
-              </button>
-            </div>
-          `
-              : `
-            <div class="qa-hidden-box">
-              <p class="qa-hidden-box__text">公式を思い浮かべてから確認しましょう</p>
-              <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="solid-fill" data-size="md">
-                ${ICONS.eye}
-                <span>答えを表示する</span>
-              </button>
-            </div>
-          `
-          }
-        </div>
-      `;
-
-      if (this.qaAnswerVisible) {
-        renderKatexFormula(dynamicEl.querySelector('#study-formula-render'), card.formula, {
-          displayMode: true,
-          mode: 'full',
-        });
-
-        const explanationEl = dynamicEl.querySelector('#study-explanation-render');
-        if (explanationEl && card.explanation) {
-          renderRichTextExplanation(explanationEl, card.explanation, { mode: 'full' });
-        }
-      }
-
-      dynamicEl.querySelector('#study-qa-toggle-btn')?.addEventListener('click', () => {
-        this.qaAnswerVisible = !this.qaAnswerVisible;
-        this._renderCardDynamicContent();
-        this.callbacks.announce(this.qaAnswerVisible ? '答えを表示しました。' : '答えを隠しました。');
-      });
     }
+
+    dynamicEl.querySelector('#study-qa-toggle-btn')?.addEventListener('click', () => {
+      this.qaAnswerVisible = !this.qaAnswerVisible;
+      this._renderCardDynamicContent();
+      this.callbacks.announce(this.qaAnswerVisible ? '答えを表示しました。' : '答えを隠しました。');
+    });
   }
 
   /**
@@ -573,28 +915,13 @@ export class StudyView {
     if (!this.optionsSheet) return;
     const stats = this.store.getStats();
     const subjects = this.store.getSubjects();
-    const isClozeMode = this.studyMode === 'cloze';
     const body = this.optionsSheet.querySelector('#study-options-sheet-body');
     if (!body) return;
 
     body.innerHTML = `
       <div class="sheet-section">
         <p class="dads-form-label">学習モード</p>
-        <button
-          type="button"
-          id="sheet-mode-switch"
-          class="dads-switch sheet-mode-switch"
-          role="switch"
-          aria-checked="${isClozeMode ? 'true' : 'false'}"
-        >
-          <span class="dads-switch__track" aria-hidden="true">
-            <span class="dads-switch__thumb"></span>
-          </span>
-          <span class="dads-switch__text">
-            <span class="dads-switch__label">${isClozeMode ? '穴埋めモード（スタサプ風）' : '通常一問一答モード'}</span>
-            <span class="dads-switch__desc">${isClozeMode ? '[ ? ] をタップして1箇所ずつ確認' : '「答えを表示」で全体を確認'}</span>
-          </span>
-        </button>
+        ${this._renderModeSegmentedHtml('sheet-mode')}
       </div>
 
       <div class="sheet-section">
@@ -644,17 +971,18 @@ export class StudyView {
       </div>
     `;
 
-    body.querySelector('#sheet-mode-switch')?.addEventListener('click', () => {
-      this._toggleMode();
-      this._renderOptionsSheet();
+    body.querySelectorAll('[data-select-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this._setMode(btn.dataset.selectMode);
+        this._renderOptionsSheet();
+      });
     });
 
     body.querySelectorAll('[data-sheet-status]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.statusFilter = btn.dataset.sheetStatus;
         this.currentCardId = null;
-        this.revealedSet = new Set();
-        this.qaAnswerVisible = false;
+        this._resetCardSessionState();
         this.render();
         this._renderOptionsSheet();
       });
@@ -663,8 +991,7 @@ export class StudyView {
     body.querySelector('#sheet-subject-select')?.addEventListener('change', (e) => {
       this.subjectFilter = e.target.value;
       this.currentCardId = null;
-      this.revealedSet = new Set();
-      this.qaAnswerVisible = false;
+      this._resetCardSessionState();
       this.render();
     });
 
@@ -679,23 +1006,23 @@ export class StudyView {
   }
 
   _bindControlEvents(filteredCards, currentIndex) {
-    this.root.querySelector('#study-mode-switch-pc')?.addEventListener('click', () => {
-      this._toggleMode();
+    this.root.querySelectorAll('[data-select-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this._setMode(btn.dataset.selectMode);
+      });
     });
 
     this.root.querySelector('#study-status-filter-pc')?.addEventListener('change', (e) => {
       this.statusFilter = e.target.value;
       this.currentCardId = null;
-      this.revealedSet = new Set();
-      this.qaAnswerVisible = false;
+      this._resetCardSessionState();
       this.render();
     });
 
     this.root.querySelector('#study-subject-filter-pc')?.addEventListener('change', (e) => {
       this.subjectFilter = e.target.value;
       this.currentCardId = null;
-      this.revealedSet = new Set();
-      this.qaAnswerVisible = false;
+      this._resetCardSessionState();
       this.render();
     });
 

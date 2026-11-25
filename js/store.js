@@ -58,7 +58,12 @@ export class FormulaStore {
       const rawPrefs = this.storage.getItem(PREFS_STORAGE_KEY);
       if (rawPrefs) {
         const parsedPrefs = JSON.parse(rawPrefs);
-        if (parsedPrefs && (parsedPrefs.studyMode === 'cloze' || parsedPrefs.studyMode === 'qa')) {
+        if (
+          parsedPrefs &&
+          (parsedPrefs.studyMode === 'cloze' ||
+            parsedPrefs.studyMode === 'quiz' ||
+            parsedPrefs.studyMode === 'qa')
+        ) {
           this.prefs.studyMode = parsedPrefs.studyMode;
         }
       }
@@ -108,7 +113,7 @@ export class FormulaStore {
   }
 
   setStudyMode(mode) {
-    if (mode !== 'cloze' && mode !== 'qa') return;
+    if (mode !== 'cloze' && mode !== 'quiz' && mode !== 'qa') return;
     this.prefs.studyMode = mode;
     this._savePrefs();
   }

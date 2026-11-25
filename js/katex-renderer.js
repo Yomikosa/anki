@@ -51,6 +51,7 @@ export function renderKatexFormula(container, rawFormula, options = {}) {
     mode = 'cloze',
     revealedSet = new Set(),
     startSlotIndex = 0,
+    activeSlotIndex = null,
     justToggledSlot = null,
     onToggleSlot = null,
   } = options;
@@ -61,6 +62,7 @@ export function renderKatexFormula(container, rawFormula, options = {}) {
     mode,
     revealedSet,
     startSlotIndex,
+    activeSlotIndex,
   });
 
   if (typeof window === 'undefined' || !window.katex) {
@@ -69,7 +71,7 @@ export function renderKatexFormula(container, rawFormula, options = {}) {
     code.className = 'katex-fallback-code';
     code.textContent = stripClozeMarkers(rawFormula);
     container.appendChild(code);
-    return { slotCount: built.slotCount, nextSlotIndex: built.nextSlotIndex };
+    return { slotCount: built.slotCount, nextSlotIndex: built.nextSlotIndex, slots: built.slots };
   }
 
   try {
@@ -94,28 +96,46 @@ export function renderKatexFormula(container, rawFormula, options = {}) {
       errBox.textContent = `数式の描画エラー: ${err?.message || rawFormula}`;
       container.appendChild(errBox);
     }
-    return { slotCount: built.slotCount, nextSlotIndex: built.nextSlotIndex };
+    return { slotCount: built.slotCount, nextSlotIndex: built.nextSlotIndex, slots: built.slots };
   }
 
-  if (mode === 'cloze' && typeof onToggleSlot === 'function') {
+  if ((mode === 'cloze' || mode === 'quiz') && typeof onToggleSlot === 'function') {
     const slotElements = container.querySelectorAll('[data-cloze-id]');
     slotElements.forEach((el) => {
       const slotIndex = Number(el.getAttribute('data-cloze-id'));
-      const isRevealed = el.getAttribute('data-cloze-state') === 'revealed';
+      const state = el.getAttribute('data-cloze-state');
+      const isRevealed = state === 'revealed';
       const displayNum = slotIndex + 1;
-
-      el.setAttribute('role', 'button');
-      el.setAttribute('tabindex', '0');
-      el.setAttribute('aria-expanded', isRevealed ? 'true' : 'false');
-      el.setAttribute(
-        'aria-label',
-        isRevealed
-          ? `穴埋め ${displayNum}（表示中・タップで隠す）`
-          : `穴埋め ${displayNum}（隠れています・タップで表示）`
-      );
 
       if (justToggledSlot === slotIndex) {
         el.classList.add('is-just-toggled');
+      }
+
+      // クイズモードでは解答済みスロットはロック表示にし、未解答スロットのみ選択可能にする
+      if (mode === 'quiz' && isRevealed) {
+        el.setAttribute('aria-label', `穴埋め ${displayNum}（正解済み）`);
+        return;
+      }
+
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+
+      if (mode === 'quiz') {
+        el.setAttribute('aria-current', state === 'active' ? 'step' : 'false');
+        el.setAttribute(
+          'aria-label',
+          state === 'active'
+            ? `穴埋め ${displayNum}（現在出題中）`
+            : `穴埋め ${displayNum}（タップしてこの箇所から回答）`
+        );
+      } else {
+        el.setAttribute('aria-expanded', isRevealed ? 'true' : 'false');
+        el.setAttribute(
+          'aria-label',
+          isRevealed
+            ? `穴埋め ${displayNum}（表示中・タップで隠す）`
+            : `穴埋め ${displayNum}（隠れています・タップで表示）`
+        );
       }
 
       el.addEventListener('click', (event) => {
@@ -133,7 +153,7 @@ export function renderKatexFormula(container, rawFormula, options = {}) {
     });
   }
 
-  return { slotCount: built.slotCount, nextSlotIndex: built.nextSlotIndex };
+  return { slotCount: built.slotCount, nextSlotIndex: built.nextSlotIndex, slots: built.slots };
 }
 
 /**

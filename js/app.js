@@ -49,10 +49,17 @@ function initApp() {
     if (pcPageTitle) pcPageTitle.textContent = meta.pcTitle;
 
     if (mobileBarTitle) {
-      mobileBarTitle.textContent =
-        activeView === 'study' && latestStudyMeta.counterText
-          ? `学習 ${latestStudyMeta.counterText}`
-          : meta.mobileTitle;
+      if (activeView === 'study' && latestStudyMeta.counterText) {
+        const prefix =
+          latestStudyMeta.mode === 'quiz'
+            ? 'クイズ'
+            : latestStudyMeta.mode === 'qa'
+              ? '一問一答'
+              : '学習';
+        mobileBarTitle.textContent = `${prefix} ${latestStudyMeta.counterText}`;
+      } else {
+        mobileBarTitle.textContent = meta.mobileTitle;
+      }
     }
 
     if (!mobileBarAction) return;

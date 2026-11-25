@@ -178,18 +178,25 @@ export function stripClozeMarkers(latex) {
 /**
  * KaTeX 描画用の LaTeX 文字列を生成する
  * - mode === 'cloze': 穴埋め箇所を \htmlData{cloze-id=N}{\htmlClass{...}{...}} に変換
+ * - mode === 'quiz': 選択式クイズ用（解答済み=revealed、出題中=active、待機中=pending）
  * - mode === 'full': 穴埋めをすべて素のLaTeXとして描画
  * - mode === 'preview': 管理一覧用（穴埋め箇所をハイライト枠付きで全表示）
  *
  * @param {string} latex
  * @param {Object} options
  * @param {Set<number>} [options.revealedSet]
- * @param {'cloze'|'full'|'preview'} [options.mode='cloze']
+ * @param {'cloze'|'quiz'|'full'|'preview'} [options.mode='cloze']
  * @param {number} [options.startSlotIndex=0]
+ * @param {number|null} [options.activeSlotIndex=null]
  * @returns {{ latex: string, slotCount: number, nextSlotIndex: number, slots: Array<{ index: number, content: string }> }}
  */
 export function buildKatexWithCloze(latex, options = {}) {
-  const { revealedSet = new Set(), mode = 'cloze', startSlotIndex = 0 } = options;
+  const {
+    revealedSet = new Set(),
+    mode = 'cloze',
+    startSlotIndex = 0,
+    activeSlotIndex = null,
+  } = options;
   const { tokens, nextSlotIndex } = tokenizeCloze(latex, startSlotIndex);
   const slots = [];
 
@@ -212,6 +219,15 @@ export function buildKatexWithCloze(latex, options = {}) {
       if (isRevealed) {
         return `{\\htmlData{cloze-id=${token.index},cloze-state=revealed}{\\htmlClass{cloze-katex cloze-katex--revealed}{${token.content}}}}`;
       }
+
+      if (mode === 'quiz') {
+        const displayNum = token.index + 1;
+        if (activeSlotIndex === token.index) {
+          return `{\\htmlData{cloze-id=${token.index},cloze-state=active}{\\htmlClass{cloze-katex cloze-katex--active}{\\text{ (${displayNum}) ? }}}}`;
+        }
+        return `{\\htmlData{cloze-id=${token.index},cloze-state=pending}{\\htmlClass{cloze-katex cloze-katex--pending}{\\text{ (${displayNum}) }}}}`;
+      }
+
       return `{\\htmlData{cloze-id=${token.index},cloze-state=hidden}{\\htmlClass{cloze-katex cloze-katex--hidden}{\\text{ ? }}}}`;
     })
     .join('');
