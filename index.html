@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>公式暗記帳 — スタサプ風タップ穴埋め・APIキー不要</title>
+    <meta
+      name="description"
+      content="デジタル庁デザインシステム（DADS）準拠の公式暗記Webアプリ。APIキー不要・Gemini JSONコピペ連携・KaTeX数式のスタサプ風タップ穴埋めに対応。"
+    />
+
+    <!-- Google Fonts: DADS公式書体 Noto Sans JP / Noto Sans Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+Mono:wght@400;700&display=swap"
+    />
+
+    <!-- KaTeX CDN -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+      crossorigin="anonymous"
+    />
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- DADS トークン・コンポーネント・アプリ固有スタイル -->
+    <link rel="stylesheet" href="./css/tokens.css" />
+    <link rel="stylesheet" href="./css/dads-components.css" />
+    <link rel="stylesheet" href="./css/app.css" />
+
+    <script type="module" src="./js/app.js"></script>
+  </head>
+  <body>
+    <a href="#main-content" class="skip-link">本文へスキップ</a>
+
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div class="app-brand">
+          <span class="app-brand__mark" aria-hidden="true">∫</span>
+          <div>
+            <h1 class="app-brand__title">公式暗記帳</h1>
+            <p class="app-brand__subtitle">APIキー不要・JSONコピペ連携・タップ穴埋め対応</p>
+          </div>
+        </div>
+
+        <div id="header-progress-summary" class="header-progress" aria-live="polite"></div>
+      </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main id="main-content" class="app-main">
+      <!-- DADS準拠 タブナビゲーション -->
+      <div class="dads-tabs">
+        <div class="dads-tabs__list" role="tablist" aria-label="アプリの画面切り替え">
+          <button
+            type="button"
+            id="tab-study"
+            class="dads-tabs__tab"
+            role="tab"
+            data-tab="study"
+            aria-selected="true"
+            aria-controls="panel-study"
+            tabindex="0"
+          >
+            <span>学習する（カード・穴埋め）</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-import"
+            class="dads-tabs__tab"
+            role="tab"
+            data-tab="import"
+            aria-selected="false"
+            aria-controls="panel-import"
+            tabindex="-1"
+          >
+            <span>公式を追加（JSON取込）</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-manage"
+            class="dads-tabs__tab"
+            role="tab"
+            data-tab="manage"
+            aria-selected="false"
+            aria-controls="panel-manage"
+            tabindex="-1"
+          >
+            <span>登録済み一覧・管理</span>
+            <span id="tab-manage-count" class="dads-tabs__count" aria-hidden="true">3</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- タブパネル1：学習する -->
+      <section
+        id="panel-study"
+        role="tabpanel"
+        data-panel="study"
+        aria-labelledby="tab-study"
+      ></section>
+
+      <!-- タブパネル2：公式を追加（JSON取込） -->
+      <section
+        id="panel-import"
+        role="tabpanel"
+        data-panel="import"
+        aria-labelledby="tab-import"
+        hidden
+      ></section>
+
+      <!-- タブパネル3：登録済み一覧・管理 -->
+      <section
+        id="panel-manage"
+        role="tabpanel"
+        data-panel="manage"
+        aria-labelledby="tab-manage"
+        hidden
+      ></section>
+    </main>
+
+    <!-- フッター -->
+    <footer class="app-footer">
+      <span>データはすべてお使いの端末（localStorage）に保存されます。外部サーバーへの送信は行いません。</span>
+      <span>
+        UI設計準拠：
+        <a href="https://design.digital.go.jp/dads/" target="_blank" rel="noopener noreferrer">
+          デジタル庁デザインシステム（DADS）
+        </a>
+      </span>
+    </footer>
+
+    <!-- 編集・手動追加モーダルダイアログ -->
+    <dialog id="formula-edit-dialog" class="dads-dialog" aria-labelledby="edit-dialog-title">
+      <div class="dads-dialog__header">
+        <h2 id="edit-dialog-title" class="dads-heading-md" style="margin: 0">公式を編集</h2>
+        <button
+          type="button"
+          id="edit-close-icon-btn"
+          class="dads-notification-banner__close"
+          aria-label="モーダルを閉じる"
+          style="margin: 0"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <form id="formula-edit-form" novalidate>
+        <div class="dads-dialog__body">
+          <div id="edit-error-slot" class="banner-slot" style="margin-top: 0"></div>
+
+          <div class="dads-form-field">
+            <label for="edit-title" class="dads-form-label">
+              公式名
+              <span class="dads-requirement-tag">必須</span>
+            </label>
+            <input type="text" id="edit-title" class="dads-input" required placeholder="例：二次方程式の解の公式" />
+          </div>
+
+          <div class="edit-form-grid">
+            <div class="dads-form-field">
+              <label for="edit-subject" class="dads-form-label">科目</label>
+              <input type="text" id="edit-subject" class="dads-input" placeholder="例：数学・物理・化学" />
+            </div>
+
+            <div class="dads-form-field">
+              <label for="edit-category" class="dads-form-label">単元・分野</label>
+              <input type="text" id="edit-category" class="dads-input" placeholder="例：二次方程式・力学" />
+            </div>
+          </div>
+
+          <div class="dads-form-field">
+            <label for="edit-question" class="dads-form-label">問題文（一問一答用）</label>
+            <input
+              type="text"
+              id="edit-question"
+              class="dads-input"
+              placeholder="例：ax² + bx + c = 0 (a ≠ 0) の解 x を求めよ。"
+            />
+          </div>
+
+          <div class="dads-form-field">
+            <label for="edit-formula" class="dads-form-label">
+              LaTeX数式（穴埋め箇所は <code>{{ }}</code> で囲む）
+              <span class="dads-requirement-tag">必須</span>
+            </label>
+            <textarea
+              id="edit-formula"
+              class="dads-textarea dads-textarea--mono"
+              rows="3"
+              required
+              spellcheck="false"
+              placeholder="例：{{x}} = \frac{{-b \pm \sqrt{b^2 - 4ac}}}{{2a}}"
+            ></textarea>
+          </div>
+
+          <div class="dads-form-field">
+            <label for="edit-explanation" class="dads-form-label">
+              ポイント・解説（インライン数式は <code>$...$</code>、穴埋めは <code>{{ }}</code>）
+            </label>
+            <textarea
+              id="edit-explanation"
+              class="dads-textarea"
+              rows="3"
+              placeholder="例：判別式 $D = {{b^2 - 4ac}}$ が $0$ のとき{{重解}}をもつ。"
+            ></textarea>
+          </div>
+
+          <div class="dads-form-field">
+            <label for="edit-status" class="dads-form-label">学習ステータス</label>
+            <select id="edit-status" class="dads-select">
+              <option value="unlearned">未習得</option>
+              <option value="review">復習が必要</option>
+              <option value="mastered">習得済み</option>
+            </select>
+          </div>
+
+          <!-- リアルタイム KaTeX プレビュー -->
+          <div class="edit-preview-box" aria-live="polite">
+            <p class="edit-preview-box__label">リアルタイム数式プレビュー（破線枠＝穴埋め対象）</p>
+            <div id="edit-formula-preview" class="edit-preview-box__math"></div>
+            <div id="edit-explanation-preview" class="edit-preview-box__exp"></div>
+          </div>
+        </div>
+
+        <div class="dads-dialog__footer">
+          <button type="button" id="edit-cancel-btn" class="dads-button" data-type="outline" data-size="md">
+            キャンセル
+          </button>
+          <button type="submit" id="edit-save-btn" class="dads-button" data-type="solid-fill" data-size="md">
+            保存する
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- 確認モーダルダイアログ -->
+    <dialog id="confirm-action-dialog" class="dads-dialog dads-dialog--sm" aria-labelledby="confirm-dialog-title">
+      <div class="dads-dialog__header">
+        <h2 id="confirm-dialog-title" class="dads-heading-sm" style="margin: 0">確認</h2>
+      </div>
+      <div class="dads-dialog__body">
+        <p id="confirm-dialog-body" style="margin: 0"></p>
+      </div>
+      <div class="dads-dialog__footer">
+        <button type="button" id="confirm-cancel-btn" class="dads-button" data-type="outline" data-size="md">
+          キャンセル
+        </button>
+        <button
+          type="button"
+          id="confirm-ok-btn"
+          class="dads-button dads-button--danger"
+          data-type="solid-fill"
+          data-size="md"
+        >
+          実行する
+        </button>
+      </div>
+    </dialog>
+
+    <!-- スクリーンリーダー用ライブリージョン -->
+    <div id="sr-live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>

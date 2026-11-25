@@ -1,0 +1,151 @@
+/* ==========================================================================
+   デジタル庁デザインシステム（DADS v2）準拠 + 透明感のあるモダンガラス拡張トークン
+   コントラスト比：本文・UI文字 4.5:1 以上、非テキスト境界 3:1 以上を厳守
+   ========================================================================== */
+
+:root {
+  /* ---- フォントファミリー（DADS公式採用書体） ---- */
+  --font-sans: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN',
+    'Yu Gothic', sans-serif;
+  --font-mono: 'Noto Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---- ベースカラー（DADSニュートラル） ---- */
+  --dads-white: #ffffff;
+  --dads-black: #000000;
+  --dads-bg-page: #f5f7fc;
+  --dads-bg-subtle: #f2f2f2;
+  --dads-bg-soft: #f8f8fb;
+
+  /* ---- テキストカラー（高コントラスト厳守） ---- */
+  --dads-text-primary: #1a1a1c;    /* 白背景比 17.4:1 */
+  --dads-text-secondary: #595960;  /* 白・淡ガラス背景比 6.4:1 以上 */
+  --dads-text-muted: #666666;      /* 白背景比 5.74:1 */
+
+  /* ---- ボーダーカラー ---- */
+  --dads-border-strong: #666666;   /* フォーム標準枠線（コントラスト 5.74:1） */
+  --dads-border-default: #8e8e98;
+  --dads-border-subtle: rgba(26, 26, 28, 0.14);
+
+  /* ---- プライマリカラー（デジタル庁ブルー） ---- */
+  --dads-primary: #0017c1;         /* 白文字比 10.7:1 */
+  --dads-primary-hover: #00118f;
+  --dads-primary-active: #000c66;
+  --dads-primary-tint-50: #eef3ff;
+  --dads-primary-tint-100: #dce7ff;
+  --dads-primary-tint-200: #c5d7ff;
+
+  /* ---- セマンティックカラー（DADS準拠） ---- */
+  --dads-success: #197a4b;         /* サクセスグリーン */
+  --dads-success-dark: #115735;    /* テキスト用高コントラスト */
+  --dads-success-bg: #e8f5ee;
+
+  --dads-warning: #d96b00;         /* 穴埋め・要復習アンバー */
+  --dads-warning-dark: #7a3800;    /* 白・淡アンバー上で 7.5:1 以上 */
+  --dads-warning-bg: #fff3e0;
+  --dads-warning-bg-hover: #ffe4bc;
+
+  --dads-error: #ec0000;           /* DADS Semantic Error-1 */
+  --dads-error-dark: #b30000;
+  --dads-error-bg: #fff0f0;
+
+  --dads-neutral-badge-bg: #f2f2f2;
+  --dads-neutral-badge-border: #767676;
+  --dads-neutral-badge-text: #333336;
+
+  /* ---- フォーカスインジケーター（DADS標準：黄色 #FFCC00 ＋ 黒枠） ---- */
+  --dads-focus-yellow: #ffcc00;
+  --dads-focus-black: #000000;
+
+  /* ---- モダン・ガラスモーフィズム＆半透明グラデーション層 ----
+     明るいライトキャンバス上で不透明度 0.74〜0.88 を確保し、透明感とDADSコントラスト比（4.5:1以上）を両立 */
+  --glass-bg-header: rgba(255, 255, 255, 0.72);
+  --glass-bg-card: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.84) 0%,
+    rgba(244, 248, 255, 0.72) 100%
+  );
+  --glass-bg-elevated: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(232, 240, 255, 0.72) 100%
+  );
+  --glass-bg-lens: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(229, 239, 255, 0.65) 52%,
+    rgba(245, 249, 255, 0.84) 100%
+  );
+  --glass-bg-lens-revealed: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(224, 245, 234, 0.68) 100%
+  );
+  --glass-bg-cloze-hidden: linear-gradient(
+    135deg,
+    rgba(255, 245, 226, 0.94) 0%,
+    rgba(255, 222, 168, 0.84) 100%
+  );
+  --glass-bg-cloze-revealed: linear-gradient(
+    135deg,
+    rgba(234, 249, 240, 0.94) 0%,
+    rgba(205, 238, 220, 0.82) 100%
+  );
+  --glass-border-light: rgba(255, 255, 255, 0.94);
+  --glass-border-tint: rgba(0, 23, 193, 0.14);
+  --glass-blur-md: blur(18px) saturate(160%);
+  --glass-blur-lg: blur(24px) saturate(175%);
+  --glass-shadow-card:
+    0 1px 2px rgba(26, 26, 28, 0.04),
+    0 12px 34px -8px rgba(0, 23, 193, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+  --glass-shadow-subtle:
+    0 3px 14px rgba(0, 23, 193, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+
+  /* ---- 角丸・スペーシング・タップ領域（DADS基準） ---- */
+  --radius-sm: 6px;
+  --radius-md: 8px;     /* DADS標準ボタン・入力欄 */
+  --radius-lg: 14px;    /* ガラスカード外枠 */
+  --radius-xl: 18px;
+  --radius-pill: 9999px;
+
+  --tap-target-min: 44px;
+  --btn-height-md: 48px;
+  --btn-height-sm: 44px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --transition-fast: 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-normal: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* アクセシビリティ設定：透明度を下げる設定のユーザーには完全不透明のDADS標準サーフェスへ切替 */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg-header: #ffffff;
+    --glass-bg-card: #ffffff;
+    --glass-bg-elevated: #ffffff;
+    --glass-bg-lens: #f8f8fb;
+    --glass-bg-lens-revealed: #e8f5ee;
+    --glass-bg-cloze-hidden: #fff3e0;
+    --glass-bg-cloze-revealed: #e8f5ee;
+    --glass-blur-md: none;
+    --glass-blur-lg: none;
+    --glass-border-tint: #c5c5ce;
+  }
+}
+
+/* アクセシビリティ設定：視覚効果（動き）を減らす */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+    --transition-normal: 0ms;
+  }
+}

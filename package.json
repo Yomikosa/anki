@@ -1,0 +1,10 @@
+{
+  "name": "dads-formula-anki",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "デジタル庁デザインシステム（DADS）準拠・APIキー不要・スタサプ風穴埋め対応 公式暗記Webアプリ",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
