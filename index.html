@@ -2,11 +2,11 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>公式暗記帳 — スタサプ風タップ穴埋め・APIキー不要</title>
     <meta
       name="description"
-      content="デジタル庁デザインシステム（DADS）準拠の公式暗記Webアプリ。APIキー不要・Gemini JSONコピペ連携・KaTeX数式のスタサプ風タップ穴埋めに対応。"
+      content="デジタル庁デザインシステム（DADS）準拠・透明感ガラスデザインの公式暗記Webアプリ。PC専用・スマホ専用UI、Gemini JSONコピペ連携、KaTeXタップ穴埋め対応。"
     />
 
     <!-- Google Fonts: DADS公式書体 Noto Sans JP / Noto Sans Mono -->
@@ -29,115 +29,174 @@
       crossorigin="anonymous"
     ></script>
 
-    <!-- DADS トークン・コンポーネント・アプリ固有スタイル -->
+    <!-- DADSトークン・コンポーネント・共通・PC専用・スマホ専用スタイル -->
     <link rel="stylesheet" href="./css/tokens.css" />
     <link rel="stylesheet" href="./css/dads-components.css" />
     <link rel="stylesheet" href="./css/app.css" />
+    <link rel="stylesheet" href="./css/layout-pc.css" />
+    <link rel="stylesheet" href="./css/layout-mobile.css" />
 
     <script type="module" src="./js/app.js"></script>
   </head>
   <body>
     <a href="#main-content" class="skip-link">本文へスキップ</a>
 
-    <!-- ヘッダー -->
-    <header class="app-header">
-      <div class="app-header__inner">
-        <div class="app-brand">
-          <span class="app-brand__mark" aria-hidden="true">∫</span>
-          <div>
-            <h1 class="app-brand__title">公式暗記帳</h1>
-            <p class="app-brand__subtitle">APIキー不要・JSONコピペ連携・タップ穴埋め対応</p>
+    <div class="app-shell">
+      <!-- ================================================================
+           PC専用UI：左フロストガラス・サイドバーナビゲーション（900px以上）
+           ================================================================ -->
+      <aside class="pc-sidebar" aria-label="メインナビゲーション（PC）">
+        <div>
+          <div class="pc-sidebar__brand">
+            <span class="app-brand__mark" aria-hidden="true">∫</span>
+            <div>
+              <p class="pc-sidebar__title">公式暗記帳</p>
+              <p class="pc-sidebar__sub">タップ穴埋め学習</p>
+            </div>
           </div>
+
+          <nav class="pc-nav" aria-label="画面切り替え">
+            <button type="button" id="pc-nav-home" class="pc-nav__item is-active" data-nav-target="home" aria-current="page">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3 10.5L12 3L21 10.5V20C21 20.6 20.6 21 20 21H15V14.5H9V21H4C3.4 21 3 20.6 3 20V10.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+              </svg>
+              <span>ホーム</span>
+            </button>
+
+            <button type="button" id="pc-nav-study" class="pc-nav__item" data-nav-target="study" aria-current="false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 5.5C4 4.7 4.7 4 5.5 4H11C12.7 4 14 5.3 14 7V20C14 18.9 13.1 18 12 18H5.5C4.7 18 4 17.3 4 16.5V5.5Z" stroke="currentColor" stroke-width="2" />
+                <path d="M20 5.5C20 4.7 19.3 4 18.5 4H13C11.3 4 10 5.3 10 7V20C10 18.9 10.9 18 12 18H18.5C19.3 18 20 17.3 20 16.5V5.5Z" stroke="currentColor" stroke-width="2" />
+              </svg>
+              <span>学習する</span>
+            </button>
+
+            <button type="button" id="pc-nav-import" class="pc-nav__item" data-nav-target="import" aria-current="false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              </svg>
+              <span>公式を追加</span>
+            </button>
+
+            <button type="button" id="pc-nav-manage" class="pc-nav__item" data-nav-target="manage" aria-current="false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 6H20M8 12H20M8 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                <circle cx="4" cy="6" r="1.25" fill="currentColor" />
+                <circle cx="4" cy="12" r="1.25" fill="currentColor" />
+                <circle cx="4" cy="18" r="1.25" fill="currentColor" />
+              </svg>
+              <span>一覧・管理</span>
+              <span id="pc-nav-manage-count" class="pc-nav__count" aria-hidden="true">3</span>
+            </button>
+          </nav>
         </div>
 
-        <div id="header-progress-summary" class="header-progress" aria-live="polite"></div>
-      </div>
-    </header>
-
-    <!-- メインコンテンツ -->
-    <main id="main-content" class="app-main">
-      <!-- DADS準拠 タブナビゲーション -->
-      <div class="dads-tabs">
-        <div class="dads-tabs__list" role="tablist" aria-label="アプリの画面切り替え">
-          <button
-            type="button"
-            id="tab-study"
-            class="dads-tabs__tab"
-            role="tab"
-            data-tab="study"
-            aria-selected="true"
-            aria-controls="panel-study"
-            tabindex="0"
-          >
-            <span>学習する（カード・穴埋め）</span>
-          </button>
-
-          <button
-            type="button"
-            id="tab-import"
-            class="dads-tabs__tab"
-            role="tab"
-            data-tab="import"
-            aria-selected="false"
-            aria-controls="panel-import"
-            tabindex="-1"
-          >
-            <span>公式を追加（JSON取込）</span>
-          </button>
-
-          <button
-            type="button"
-            id="tab-manage"
-            class="dads-tabs__tab"
-            role="tab"
-            data-tab="manage"
-            aria-selected="false"
-            aria-controls="panel-manage"
-            tabindex="-1"
-          >
-            <span>登録済み一覧・管理</span>
-            <span id="tab-manage-count" class="dads-tabs__count" aria-hidden="true">3</span>
-          </button>
+        <div class="pc-sidebar__progress" aria-label="全体の習得状況">
+          <div class="pc-sidebar__progress-top">
+            <span>習得率</span>
+            <strong id="pc-sidebar-rate">0%</strong>
+          </div>
+          <div class="dads-progress-track" aria-hidden="true">
+            <div id="pc-sidebar-bar" class="dads-progress-bar" style="width: 0%"></div>
+          </div>
+          <p id="pc-sidebar-sub" class="pc-sidebar__progress-sub">習得 0 / 全 3 件</p>
         </div>
+      </aside>
+
+      <!-- ================================================================
+           スマホ専用UI：スリムトップアプリバー（899px以下）
+           ================================================================ -->
+      <header class="mobile-topbar">
+        <div class="mobile-topbar__left">
+          <span class="mobile-topbar__mark" aria-hidden="true">∫</span>
+          <p id="mobile-bar-title" class="mobile-topbar__title">公式暗記帳</p>
+        </div>
+        <div id="mobile-bar-action"></div>
+      </header>
+
+      <!-- ================================================================
+           メインコンテンツ領域
+           ================================================================ -->
+      <div class="app-workspace">
+        <main id="main-content" class="app-workspace__inner">
+          <div class="pc-page-header">
+            <h1 id="pc-page-title" class="pc-page-title">ホーム</h1>
+          </div>
+
+          <section id="view-home" data-view-panel="home" aria-label="ホーム画面"></section>
+          <section id="view-study" data-view-panel="study" aria-label="学習画面" hidden></section>
+          <section id="view-import" data-view-panel="import" aria-label="公式を追加画面" hidden></section>
+          <section id="view-manage" data-view-panel="manage" aria-label="登録済み一覧・管理画面" hidden></section>
+        </main>
+
+        <footer class="app-footer">
+          <span>データは端末の localStorage のみに保存されます</span>
+          <span>
+            準拠：
+            <a href="https://design.digital.go.jp/dads/" target="_blank" rel="noopener noreferrer">
+              デジタル庁デザインシステム（DADS）
+            </a>
+          </span>
+        </footer>
       </div>
 
-      <!-- タブパネル1：学習する -->
-      <section
-        id="panel-study"
-        role="tabpanel"
-        data-panel="study"
-        aria-labelledby="tab-study"
-      ></section>
+      <!-- ================================================================
+           スマホ専用UI：DADS準拠 ボトムナビゲーション（899px以下）
+           ================================================================ -->
+      <nav class="mobile-bottom-nav" aria-label="メインナビゲーション（スマートフォン）">
+        <button type="button" id="mobile-nav-home" class="mobile-bottom-nav__item is-active" data-nav-target="home" aria-current="page">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M3 10.5L12 3L21 10.5V20C21 20.6 20.6 21 20 21H15V14.5H9V21H4C3.4 21 3 20.6 3 20V10.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+          </svg>
+          <span>ホーム</span>
+        </button>
 
-      <!-- タブパネル2：公式を追加（JSON取込） -->
-      <section
-        id="panel-import"
-        role="tabpanel"
-        data-panel="import"
-        aria-labelledby="tab-import"
-        hidden
-      ></section>
+        <button type="button" id="mobile-nav-study" class="mobile-bottom-nav__item" data-nav-target="study" aria-current="false">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 5.5C4 4.7 4.7 4 5.5 4H11C12.7 4 14 5.3 14 7V20C14 18.9 13.1 18 12 18H5.5C4.7 18 4 17.3 4 16.5V5.5Z" stroke="currentColor" stroke-width="2" />
+            <path d="M20 5.5C20 4.7 19.3 4 18.5 4H13C11.3 4 10 5.3 10 7V20C10 18.9 10.9 18 12 18H18.5C19.3 18 20 17.3 20 16.5V5.5Z" stroke="currentColor" stroke-width="2" />
+          </svg>
+          <span>学習</span>
+        </button>
 
-      <!-- タブパネル3：登録済み一覧・管理 -->
-      <section
-        id="panel-manage"
-        role="tabpanel"
-        data-panel="manage"
-        aria-labelledby="tab-manage"
-        hidden
-      ></section>
-    </main>
+        <button type="button" id="mobile-nav-import" class="mobile-bottom-nav__item" data-nav-target="import" aria-current="false">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          </svg>
+          <span>追加</span>
+        </button>
 
-    <!-- フッター -->
-    <footer class="app-footer">
-      <span>データはすべてお使いの端末（localStorage）に保存されます。外部サーバーへの送信は行いません。</span>
-      <span>
-        UI設計準拠：
-        <a href="https://design.digital.go.jp/dads/" target="_blank" rel="noopener noreferrer">
-          デジタル庁デザインシステム（DADS）
-        </a>
-      </span>
-    </footer>
+        <button type="button" id="mobile-nav-manage" class="mobile-bottom-nav__item" data-nav-target="manage" aria-current="false">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8 6H20M8 12H20M8 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            <circle cx="4" cy="6" r="1.25" fill="currentColor" />
+            <circle cx="4" cy="12" r="1.25" fill="currentColor" />
+            <circle cx="4" cy="18" r="1.25" fill="currentColor" />
+          </svg>
+          <span>一覧</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- スマホ専用：学習条件・モード切替ボトムシート -->
+    <dialog id="study-options-sheet" class="mobile-sheet" aria-labelledby="sheet-title">
+      <div class="mobile-sheet__handle" aria-hidden="true"></div>
+      <div class="mobile-sheet__header">
+        <h2 id="sheet-title" class="dads-heading-sm" style="margin: 0">学習モード・絞り込み</h2>
+        <button
+          type="button"
+          id="sheet-close-btn"
+          class="dads-notification-banner__close"
+          aria-label="閉じる"
+          style="margin: 0"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div id="study-options-sheet-body" class="mobile-sheet__body"></div>
+    </dialog>
 
     <!-- 編集・手動追加モーダルダイアログ -->
     <dialog id="formula-edit-dialog" class="dads-dialog" aria-labelledby="edit-dialog-title">
@@ -207,7 +266,7 @@
 
           <div class="dads-form-field">
             <label for="edit-explanation" class="dads-form-label">
-              ポイント・解説（インライン数式は <code>$...$</code>、穴埋めは <code>{{ }}</code>）
+              解説（インライン数式は <code>$...$</code>、穴埋めは <code>{{ }}</code>）
             </label>
             <textarea
               id="edit-explanation"
@@ -226,7 +285,6 @@
             </select>
           </div>
 
-          <!-- リアルタイム KaTeX プレビュー -->
           <div class="edit-preview-box" aria-live="polite">
             <p class="edit-preview-box__label">リアルタイム数式プレビュー（破線枠＝穴埋め対象）</p>
             <div id="edit-formula-preview" class="edit-preview-box__math"></div>
@@ -269,7 +327,6 @@
       </div>
     </dialog>
 
-    <!-- スクリーンリーダー用ライブリージョン -->
     <div id="sr-live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
   </body>
 </html>

@@ -1,5 +1,7 @@
 /**
- * 「学習する（カード・穴埋め）」タブ コントローラー
+ * 「学習する（カード・穴埋め）」画面コントローラー
+ * - PC UI: 1行のスリムなツールバー + 集中できる学習カード
+ * - スマホ UI: 画面上部に余計なUIを置かずカードを即表示。条件・モード切替はボトムシートで操作
  */
 
 import { countCardClozeSlots } from './cloze.js';
@@ -9,36 +11,58 @@ import {
   STATUS_META,
   STATUS_ORDER,
   escapeHtml,
-  renderStatusChipHtml,
 } from './ui-helpers.js';
 
 export class StudyView {
   /**
    * @param {HTMLElement} root
    * @param {import('./store.js').FormulaStore} store
-   * @param {{ onNavigateToImport: () => void, announce: (msg: string) => void }} callbacks
+   * @param {{
+   *   onNavigateToImport: () => void,
+   *   onStudyMetaChange: (meta: { counterText: string, hasActiveFilter: boolean, mode: string }) => void,
+   *   announce: (msg: string) => void
+   * }} callbacks
    */
   constructor(root, store, callbacks) {
     this.root = root;
     this.store = store;
     this.callbacks = callbacks;
 
-    this.statusFilter = 'all'; // 'all' | 'unlearned' | 'review' | 'mastered'
+    this.statusFilter = 'all';
     this.subjectFilter = 'all';
     this.studyMode = store.getStudyMode(); // 'cloze' | 'qa'
-    this.shuffledOrder = null; // Array<string> | null
+    this.shuffledOrder = null;
     this.currentCardId = null;
 
-    // 現在のカードの一時的な表示状態
     this.revealedSet = new Set();
     this.qaAnswerVisible = false;
     this.justToggledSlot = null;
 
+    this.optionsSheet = document.getElementById('study-options-sheet');
     this.render();
   }
 
   /**
-   * 外部（一覧・インポート完了時など）から特定カードを指定して学習開始
+   * ホーム画面などのクイックデッキから条件付きで学習開始
+   * @param {{ status?: string, subject?: string, shuffle?: boolean }} [opts]
+   */
+  startSession(opts = {}) {
+    this.statusFilter = opts.status ?? 'all';
+    this.subjectFilter = opts.subject ?? 'all';
+    this.shuffledOrder = null;
+    this.currentCardId = null;
+    this.revealedSet = new Set();
+    this.qaAnswerVisible = false;
+    this.justToggledSlot = null;
+
+    if (opts.shuffle) {
+      this._generateShuffleOrder();
+    }
+    this.render();
+  }
+
+  /**
+   * 一覧やインポート完了時から特定カードを開いて学習開始
    * @param {string} cardId
    */
   focusCard(cardId) {
@@ -48,7 +72,6 @@ export class StudyView {
       return;
     }
 
-    // フィルタで隠れている場合はフィルタを解除して確実に表示
     if (this.statusFilter !== 'all' && target.status !== this.statusFilter) {
       this.statusFilter = 'all';
     }
@@ -61,6 +84,24 @@ export class StudyView {
     this.qaAnswerVisible = false;
     this.justToggledSlot = null;
     this.render();
+  }
+
+  /**
+   * スマホ用「学習設定・絞り込み」ボトムシートを開く
+   */
+  openOptionsSheet() {
+    if (!this.optionsSheet) return;
+    this._renderOptionsSheet();
+    this.optionsSheet.showModal();
+  }
+
+  _generateShuffleOrder() {
+    const allIds = this.store.getAll().map((c) => c.id);
+    for (let i = allIds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allIds[i], allIds[j]] = [allIds[j], allIds[i]];
+    }
+    this.shuffledOrder = allIds;
   }
 
   _getFilteredCards() {
@@ -108,13 +149,22 @@ export class StudyView {
     this.render();
   }
 
+  _toggleMode() {
+    this.studyMode = this.studyMode === 'cloze' ? 'qa' : 'cloze';
+    this.store.setStudyMode(this.studyMode);
+    this.revealedSet = new Set();
+    this.qaAnswerVisible = false;
+    this.justToggledSlot = null;
+    this.render();
+    this.callbacks.announce(
+      this.studyMode === 'cloze'
+        ? '穴埋めモード（スタサプ風）に切り替えました。'
+        : '通常一問一答モードに切り替えました。'
+    );
+  }
+
   _handleShuffle() {
-    const allIds = this.store.getAll().map((c) => c.id);
-    for (let i = allIds.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [allIds[i], allIds[j]] = [allIds[j], allIds[i]];
-    }
-    this.shuffledOrder = allIds;
+    this._generateShuffleOrder();
     const filtered = this._getFilteredCards();
     if (filtered.length > 0) {
       this._switchCard(filtered[0]);
@@ -133,9 +183,7 @@ export class StudyView {
 
     if (viaKeyboard) {
       const nextFocusTarget = this.root.querySelector(`[data-cloze-id="${slotIndex}"]`);
-      if (nextFocusTarget) {
-        nextFocusTarget.focus();
-      }
+      if (nextFocusTarget) nextFocusTarget.focus();
     }
   }
 
@@ -156,6 +204,10 @@ export class StudyView {
     this.callbacks.announce('すべての穴埋めを隠しました。');
   }
 
+  _hasActiveFilter() {
+    return this.statusFilter !== 'all' || this.subjectFilter !== 'all';
+  }
+
   render() {
     const stats = this.store.getStats();
     const subjects = this.store.getSubjects();
@@ -167,75 +219,92 @@ export class StudyView {
     const currentIndex = this._resolveCurrentIndex(filteredCards);
     const currentCard = currentIndex >= 0 ? filteredCards[currentIndex] : null;
     const isClozeMode = this.studyMode === 'cloze';
+    const hasFilter = this._hasActiveFilter();
+
+    // スマホトップバー用のカウンター・フィルタ状態を通知
+    this.callbacks.onStudyMetaChange?.({
+      counterText: currentCard ? `${currentIndex + 1} / ${filteredCards.length}` : '0件',
+      hasActiveFilter: hasFilter,
+      mode: this.studyMode,
+    });
 
     this.root.innerHTML = `
-      <section class="study-controls glass-panel" aria-label="学習条件の設定">
-        <div class="study-controls__top">
-          <div class="study-mode-switch-wrap">
-            <div class="dads-switch-group">
-              <button
-                type="button"
-                id="study-mode-switch"
-                class="dads-switch"
-                role="switch"
-                aria-checked="${isClozeMode ? 'true' : 'false'}"
-                aria-labelledby="study-mode-label"
-                aria-describedby="study-mode-desc"
-              >
-                <span class="dads-switch__track" aria-hidden="true">
-                  <span class="dads-switch__thumb"></span>
-                </span>
-                <span class="dads-switch__text">
-                  <span id="study-mode-label" class="dads-switch__label">
-                    ${isClozeMode ? '穴埋めモード（スタサプ風）' : '通常一問一答モード'}
-                  </span>
-                  <span id="study-mode-desc" class="dads-switch__desc">
-                    ${
-                      isClozeMode
-                        ? '数式の [ ? ] をタップして1箇所ずつ確認できます'
-                        : '公式名と問題を見てから「答えを表示」で確認します'
-                    }
-                  </span>
-                </span>
-              </button>
-            </div>
-          </div>
+      <div class="study-layout">
+        <!-- PC専用：スリムな1行ツールバー（スマホでは非表示） -->
+        <div class="study-toolbar-pc glass-panel" aria-label="学習条件とモード設定">
+          <button
+            type="button"
+            id="study-mode-switch-pc"
+            class="dads-switch dads-switch--compact"
+            role="switch"
+            aria-checked="${isClozeMode ? 'true' : 'false'}"
+          >
+            <span class="dads-switch__track" aria-hidden="true">
+              <span class="dads-switch__thumb"></span>
+            </span>
+            <span class="dads-switch__label">
+              ${isClozeMode ? '穴埋めモード' : '一問一答モード'}
+            </span>
+          </button>
 
-          <div class="study-controls__filters">
-            <div class="dads-field-inline">
-              <label for="study-subject-filter" class="dads-label-inline">科目</label>
-              <select id="study-subject-filter" class="dads-select">
-                <option value="all" ${this.subjectFilter === 'all' ? 'selected' : ''}>すべての科目</option>
-                ${subjects
-                  .map(
-                    (subj) =>
-                      `<option value="${escapeHtml(subj)}" ${this.subjectFilter === subj ? 'selected' : ''}>${escapeHtml(subj)}</option>`
-                  )
-                  .join('')}
-              </select>
-            </div>
+          <div class="study-toolbar-pc__right">
+            <label for="study-status-filter-pc" class="sr-only">ステータスで絞り込み</label>
+            <select id="study-status-filter-pc" class="dads-select dads-select--compact">
+              <option value="all" ${this.statusFilter === 'all' ? 'selected' : ''}>すべて（${stats.total}）</option>
+              <option value="unlearned" ${this.statusFilter === 'unlearned' ? 'selected' : ''}>未習得（${stats.unlearned}）</option>
+              <option value="review" ${this.statusFilter === 'review' ? 'selected' : ''}>復習が必要（${stats.review}）</option>
+              <option value="mastered" ${this.statusFilter === 'mastered' ? 'selected' : ''}>習得済み（${stats.mastered}）</option>
+            </select>
 
-            <button type="button" id="study-shuffle-btn" class="dads-button" data-type="outline" data-size="sm">
+            <label for="study-subject-filter-pc" class="sr-only">科目で絞り込み</label>
+            <select id="study-subject-filter-pc" class="dads-select dads-select--compact">
+              <option value="all" ${this.subjectFilter === 'all' ? 'selected' : ''}>全科目</option>
+              ${subjects
+                .map(
+                  (subj) =>
+                    `<option value="${escapeHtml(subj)}" ${this.subjectFilter === subj ? 'selected' : ''}>${escapeHtml(subj)}</option>`
+                )
+                .join('')}
+            </select>
+
+            <button
+              type="button"
+              id="study-shuffle-btn-pc"
+              class="dads-button"
+              data-type="outline"
+              data-size="sm"
+              aria-label="カードの順番をシャッフル"
+            >
               ${ICONS.shuffle}
               <span>シャッフル</span>
             </button>
           </div>
         </div>
 
-        <div class="study-status-filter" role="group" aria-label="習得ステータスで絞り込み">
-          ${this._renderFilterButton('all', 'すべて', stats.total)}
-          ${this._renderFilterButton('unlearned', '未習得', stats.unlearned)}
-          ${this._renderFilterButton('review', '復習が必要', stats.review)}
-          ${this._renderFilterButton('mastered', '習得済み', stats.mastered)}
-        </div>
-      </section>
-
-      <div id="study-stage">
+        <!-- スマホ専用：絞り込み適用中のみ最小チップを表示 -->
         ${
-          currentCard
-            ? this._renderCardShellHtml(currentCard, currentIndex, filteredCards.length, isClozeMode)
-            : this._renderEmptyStateHtml(stats.total)
+          hasFilter
+            ? `
+          <div class="study-mobile-active-filter">
+            <span class="study-mobile-active-filter__text">
+              絞り込み中：${this.statusFilter !== 'all' ? STATUS_META[this.statusFilter].label : ''}${this.statusFilter !== 'all' && this.subjectFilter !== 'all' ? ' / ' : ''}${this.subjectFilter !== 'all' ? escapeHtml(this.subjectFilter) : ''}
+            </span>
+            <button type="button" id="study-mobile-clear-filter" class="dads-button" data-type="text" data-size="sm">
+              解除
+            </button>
+          </div>
+        `
+            : ''
         }
+
+        <!-- メイン学習カード -->
+        <div id="study-stage">
+          ${
+            currentCard
+              ? this._renderCardShellHtml(currentCard, currentIndex, filteredCards.length)
+              : this._renderEmptyStateHtml(stats.total)
+          }
+        </div>
       </div>
     `;
 
@@ -246,27 +315,12 @@ export class StudyView {
     }
   }
 
-  _renderFilterButton(value, label, count) {
-    const active = this.statusFilter === value;
-    return `
-      <button
-        type="button"
-        class="filter-pill ${active ? 'is-active' : ''}"
-        data-filter-status="${value}"
-        aria-pressed="${active ? 'true' : 'false'}"
-      >
-        <span>${label}</span>
-        <span class="filter-pill__count">${count}</span>
-      </button>
-    `;
-  }
-
   _renderEmptyStateHtml(totalCards) {
     if (totalCards === 0) {
       return `
         <div class="empty-state glass-panel">
-          <h2 class="dads-heading-md">登録されている公式がありません</h2>
-          <p class="empty-state__desc">「公式を追加（JSON取込）」タブから、Geminiで読み取った公式をインポートしてください。</p>
+          <h2 class="dads-heading-md">公式がまだありません</h2>
+          <p class="empty-state__desc">「追加」画面から、Gemini で読み取った公式 JSON をインポートしてください。</p>
           <button type="button" id="empty-go-import-btn" class="dads-button" data-type="solid-fill" data-size="md">
             ${ICONS.plus}
             <span>公式を追加する</span>
@@ -276,52 +330,37 @@ export class StudyView {
     }
     return `
       <div class="empty-state glass-panel">
-        <h2 class="dads-heading-md">条件に一致する公式はありません</h2>
-        <p class="empty-state__desc">選択中のステータスまたは科目に該当するカードが0件です。絞り込みを解除してください。</p>
+        <h2 class="dads-heading-md">該当する公式がありません</h2>
+        <p class="empty-state__desc">現在の絞り込み条件に一致するカードは 0 件です。</p>
         <button type="button" id="empty-reset-filter-btn" class="dads-button" data-type="outline" data-size="md">
-          <span>絞り込みをすべて解除</span>
+          <span>絞り込みを解除</span>
         </button>
       </div>
     `;
   }
 
-  _renderCardShellHtml(card, currentIndex, totalFiltered, isClozeMode) {
-    const hasPrev = totalFiltered > 1;
-    const hasNext = totalFiltered > 1;
+  _renderCardShellHtml(card, currentIndex, totalFiltered) {
+    const canMove = totalFiltered > 1;
+    const categoryText = card.category ? `${card.subject} / ${card.category}` : card.subject;
 
     return `
       <article class="study-card glass-panel" aria-labelledby="study-card-title">
         <header class="study-card__header">
-          <div class="study-card__meta">
-            <span class="dads-chip-label" data-style="filled-1" data-color="blue">${escapeHtml(card.subject)}</span>
-            ${
-              card.category
-                ? `<span class="dads-chip-label" data-style="outlined" data-color="gray">${escapeHtml(card.category)}</span>`
-                : ''
-            }
-          </div>
-          <div class="study-card__progress-meta">
-            <span class="study-card__counter" aria-label="全${totalFiltered}件中${currentIndex + 1}件目">
-              ${currentIndex + 1} / ${totalFiltered}
-            </span>
-            ${renderStatusChipHtml(card.status)}
-          </div>
+          <span class="dads-chip-label" data-style="filled-1" data-color="blue">${escapeHtml(categoryText)}</span>
+          <span class="study-card__counter" aria-label="全${totalFiltered}件中${currentIndex + 1}件目">
+            ${currentIndex + 1} / ${totalFiltered}
+          </span>
         </header>
 
         <div class="study-card__question-block">
           <h2 id="study-card-title" class="study-card__title">${escapeHtml(card.title)}</h2>
-          ${
-            card.question
-              ? `<p class="study-card__question">${escapeHtml(card.question)}</p>`
-              : ''
-          }
+          ${card.question ? `<p class="study-card__question">${escapeHtml(card.question)}</p>` : ''}
         </div>
 
         <div id="study-card-dynamic"></div>
 
-        <div class="study-card__status-section">
-          <p class="study-card__section-label" id="status-group-label">学習ステータスを記録</p>
-          <div class="status-selector" role="group" aria-labelledby="status-group-label">
+        <div class="study-card__footer">
+          <div class="status-selector" role="group" aria-label="学習ステータスを記録">
             ${STATUS_ORDER.map((key) => {
               const meta = STATUS_META[key];
               const isSelected = card.status === key;
@@ -333,49 +372,43 @@ export class StudyView {
                   aria-pressed="${isSelected ? 'true' : 'false'}"
                 >
                   ${meta.icon}
-                  <span>${meta.label}</span>
+                  <span class="status-btn__full">${meta.label}</span>
+                  <span class="status-btn__short" aria-hidden="true">${meta.shortLabel}</span>
                 </button>
               `;
             }).join('')}
           </div>
+
+          <nav class="study-card__nav" aria-label="カードの移動">
+            <button
+              type="button"
+              id="study-prev-btn"
+              class="dads-button"
+              data-type="outline"
+              data-size="md"
+              ${canMove ? '' : 'disabled'}
+            >
+              ${ICONS.prev}
+              <span>前へ</span>
+            </button>
+
+            <button
+              type="button"
+              id="study-next-btn"
+              class="dads-button"
+              data-type="solid-fill"
+              data-size="md"
+              ${canMove ? '' : 'disabled'}
+            >
+              <span>次の公式</span>
+              ${ICONS.next}
+            </button>
+          </nav>
         </div>
-
-        <nav class="study-card__nav" aria-label="カードの移動">
-          <button
-            type="button"
-            id="study-prev-btn"
-            class="dads-button"
-            data-type="outline"
-            data-size="md"
-            ${hasPrev ? '' : 'disabled'}
-          >
-            ${ICONS.prev}
-            <span>前の公式</span>
-          </button>
-
-          <span class="study-card__nav-hint">
-            ${isClozeMode ? 'タップで個別開閉' : '一問一答'}
-          </span>
-
-          <button
-            type="button"
-            id="study-next-btn"
-            class="dads-button"
-            data-type="solid-fill"
-            data-size="md"
-            ${hasNext ? '' : 'disabled'}
-          >
-            <span>次の公式</span>
-            ${ICONS.next}
-          </button>
-        </nav>
       </article>
     `;
   }
 
-  /**
-   * 数式エリア・解説エリア・一括開閉ボタンのみを再描画（スロット開閉時の高速・フォーカス維持更新）
-   */
   _renderCardDynamicContent() {
     const dynamicEl = this.root.querySelector('#study-card-dynamic');
     const card = this.store.getById(this.currentCardId);
@@ -391,23 +424,22 @@ export class StudyView {
 
       dynamicEl.innerHTML = `
         <div class="formula-lens" aria-label="公式の数式表示エリア">
-          <div class="formula-lens__hint">
-            <span>${totalSlots > 0 ? 'オレンジの [ ? ] をタップするとその箇所だけ答えが表示されます' : 'この公式には穴埋め箇所がありません'}</span>
-            ${
-              totalSlots > 0
-                ? `<span class="formula-lens__counter" aria-live="polite">表示中: <strong>${revealedCount}</strong> / ${totalSlots}</span>`
-                : ''
-            }
-          </div>
+          ${
+            totalSlots > 0
+              ? `<div class="formula-lens__top">
+                   <span class="formula-lens__counter" aria-live="polite">${revealedCount} / ${totalSlots} 表示中</span>
+                 </div>`
+              : ''
+          }
           <div id="study-formula-render" class="formula-lens__math"></div>
         </div>
 
         ${
           card.explanation
             ? `
-          <div class="explanation-box">
-            <h3 class="explanation-box__heading">ポイント・解説</h3>
-            <div id="study-explanation-render" class="explanation-box__body"></div>
+          <div class="explanation-block">
+            <h3 class="explanation-block__heading">解説</h3>
+            <div id="study-explanation-render" class="explanation-block__body"></div>
           </div>
         `
             : ''
@@ -422,7 +454,7 @@ export class StudyView {
               id="study-reveal-all-btn"
               class="dads-button"
               data-type="outline"
-              data-size="md"
+              data-size="sm"
               ${allRevealed ? 'disabled' : ''}
             >
               ${ICONS.eye}
@@ -433,7 +465,7 @@ export class StudyView {
               id="study-hide-all-btn"
               class="dads-button"
               data-type="outline"
-              data-size="md"
+              data-size="sm"
               ${noneRevealed ? 'disabled' : ''}
             >
               ${ICONS.eyeOff}
@@ -466,19 +498,20 @@ export class StudyView {
         });
       }
 
-      const revealAllBtn = dynamicEl.querySelector('#study-reveal-all-btn');
-      const hideAllBtn = dynamicEl.querySelector('#study-hide-all-btn');
-      revealAllBtn?.addEventListener('click', () => this._handleRevealAll(totalSlots));
-      hideAllBtn?.addEventListener('click', () => this._handleHideAll());
+      dynamicEl
+        .querySelector('#study-reveal-all-btn')
+        ?.addEventListener('click', () => this._handleRevealAll(totalSlots));
+      dynamicEl
+        .querySelector('#study-hide-all-btn')
+        ?.addEventListener('click', () => this._handleHideAll());
     } else {
-      // 通常一問一答モード
       dynamicEl.innerHTML = `
         <div class="qa-stage">
           ${
             this.qaAnswerVisible
               ? `
             <div class="formula-lens formula-lens--revealed" aria-label="解答の数式">
-              <div class="formula-lens__hint">
+              <div class="formula-lens__top">
                 <span class="qa-answer-label">解答</span>
               </div>
               <div id="study-formula-render" class="formula-lens__math"></div>
@@ -486,15 +519,15 @@ export class StudyView {
             ${
               card.explanation
                 ? `
-              <div class="explanation-box">
-                <h3 class="explanation-box__heading">ポイント・解説</h3>
-                <div id="study-explanation-render" class="explanation-box__body"></div>
+              <div class="explanation-block">
+                <h3 class="explanation-block__heading">解説</h3>
+                <div id="study-explanation-render" class="explanation-block__body"></div>
               </div>
             `
                 : ''
             }
             <div class="study-bulk-actions">
-              <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="outline" data-size="md">
+              <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="outline" data-size="sm">
                 ${ICONS.eyeOff}
                 <span>答えを隠す</span>
               </button>
@@ -502,7 +535,7 @@ export class StudyView {
           `
               : `
             <div class="qa-hidden-box">
-              <p class="qa-hidden-box__text">頭の中で公式を思い浮かべてから、下のボタンで答え合わせをしましょう。</p>
+              <p class="qa-hidden-box__text">公式を思い浮かべてから確認しましょう</p>
               <button type="button" id="study-qa-toggle-btn" class="dads-button" data-type="solid-fill" data-size="md">
                 ${ICONS.eye}
                 <span>答えを表示する</span>
@@ -514,22 +547,18 @@ export class StudyView {
       `;
 
       if (this.qaAnswerVisible) {
-        const formulaEl = dynamicEl.querySelector('#study-formula-render');
-        renderKatexFormula(formulaEl, card.formula, {
+        renderKatexFormula(dynamicEl.querySelector('#study-formula-render'), card.formula, {
           displayMode: true,
           mode: 'full',
         });
 
         const explanationEl = dynamicEl.querySelector('#study-explanation-render');
         if (explanationEl && card.explanation) {
-          renderRichTextExplanation(explanationEl, card.explanation, {
-            mode: 'full',
-          });
+          renderRichTextExplanation(explanationEl, card.explanation, { mode: 'full' });
         }
       }
 
-      const qaToggleBtn = dynamicEl.querySelector('#study-qa-toggle-btn');
-      qaToggleBtn?.addEventListener('click', () => {
+      dynamicEl.querySelector('#study-qa-toggle-btn')?.addEventListener('click', () => {
         this.qaAnswerVisible = !this.qaAnswerVisible;
         this._renderCardDynamicContent();
         this.callbacks.announce(this.qaAnswerVisible ? '答えを表示しました。' : '答えを隠しました。');
@@ -537,24 +566,101 @@ export class StudyView {
     }
   }
 
-  _bindControlEvents(filteredCards, currentIndex) {
-    const modeSwitch = this.root.querySelector('#study-mode-switch');
-    modeSwitch?.addEventListener('click', () => {
-      this.studyMode = this.studyMode === 'cloze' ? 'qa' : 'cloze';
-      this.store.setStudyMode(this.studyMode);
-      this.revealedSet = new Set();
-      this.qaAnswerVisible = false;
-      this.justToggledSlot = null;
-      this.render();
-      this.callbacks.announce(
-        this.studyMode === 'cloze'
-          ? '穴埋めモード（スタサプ風）に切り替えました。'
-          : '通常一問一答モードに切り替えました。'
-      );
+  /**
+   * スマホ用ボトムシートの中身を描画＆イベント接続
+   */
+  _renderOptionsSheet() {
+    if (!this.optionsSheet) return;
+    const stats = this.store.getStats();
+    const subjects = this.store.getSubjects();
+    const isClozeMode = this.studyMode === 'cloze';
+    const body = this.optionsSheet.querySelector('#study-options-sheet-body');
+    if (!body) return;
+
+    body.innerHTML = `
+      <div class="sheet-section">
+        <p class="dads-form-label">学習モード</p>
+        <button
+          type="button"
+          id="sheet-mode-switch"
+          class="dads-switch sheet-mode-switch"
+          role="switch"
+          aria-checked="${isClozeMode ? 'true' : 'false'}"
+        >
+          <span class="dads-switch__track" aria-hidden="true">
+            <span class="dads-switch__thumb"></span>
+          </span>
+          <span class="dads-switch__text">
+            <span class="dads-switch__label">${isClozeMode ? '穴埋めモード（スタサプ風）' : '通常一問一答モード'}</span>
+            <span class="dads-switch__desc">${isClozeMode ? '[ ? ] をタップして1箇所ずつ確認' : '「答えを表示」で全体を確認'}</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="sheet-section">
+        <p class="dads-form-label">ステータスで絞り込み</p>
+        <div class="sheet-filter-grid">
+          ${[
+            ['all', `すべて (${stats.total})`],
+            ['unlearned', `未習得 (${stats.unlearned})`],
+            ['review', `要復習 (${stats.review})`],
+            ['mastered', `習得済み (${stats.mastered})`],
+          ]
+            .map(
+              ([val, text]) => `
+            <button
+              type="button"
+              class="filter-pill ${this.statusFilter === val ? 'is-active' : ''}"
+              data-sheet-status="${val}"
+              aria-pressed="${this.statusFilter === val ? 'true' : 'false'}"
+            >${text}</button>
+          `
+            )
+            .join('')}
+        </div>
+      </div>
+
+      <div class="sheet-section">
+        <label for="sheet-subject-select" class="dads-form-label">科目で絞り込み</label>
+        <select id="sheet-subject-select" class="dads-select">
+          <option value="all" ${this.subjectFilter === 'all' ? 'selected' : ''}>すべての科目</option>
+          ${subjects
+            .map(
+              (subj) =>
+                `<option value="${escapeHtml(subj)}" ${this.subjectFilter === subj ? 'selected' : ''}>${escapeHtml(subj)}</option>`
+            )
+            .join('')}
+        </select>
+      </div>
+
+      <div class="sheet-actions">
+        <button type="button" id="sheet-shuffle-btn" class="dads-button" data-type="outline" data-size="md">
+          ${ICONS.shuffle}
+          <span>順番をシャッフル</span>
+        </button>
+        <button type="button" id="sheet-done-btn" class="dads-button" data-type="solid-fill" data-size="md">
+          <span>この条件で学習する</span>
+        </button>
+      </div>
+    `;
+
+    body.querySelector('#sheet-mode-switch')?.addEventListener('click', () => {
+      this._toggleMode();
+      this._renderOptionsSheet();
     });
 
-    const subjectSelect = this.root.querySelector('#study-subject-filter');
-    subjectSelect?.addEventListener('change', (e) => {
+    body.querySelectorAll('[data-sheet-status]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.statusFilter = btn.dataset.sheetStatus;
+        this.currentCardId = null;
+        this.revealedSet = new Set();
+        this.qaAnswerVisible = false;
+        this.render();
+        this._renderOptionsSheet();
+      });
+    });
+
+    body.querySelector('#sheet-subject-select')?.addEventListener('change', (e) => {
       this.subjectFilter = e.target.value;
       this.currentCardId = null;
       this.revealedSet = new Set();
@@ -562,17 +668,45 @@ export class StudyView {
       this.render();
     });
 
-    const shuffleBtn = this.root.querySelector('#study-shuffle-btn');
-    shuffleBtn?.addEventListener('click', () => this._handleShuffle());
+    body.querySelector('#sheet-shuffle-btn')?.addEventListener('click', () => {
+      this._handleShuffle();
+      this.optionsSheet.close();
+    });
 
-    this.root.querySelectorAll('[data-filter-status]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        this.statusFilter = btn.dataset.filterStatus;
-        this.currentCardId = null;
-        this.revealedSet = new Set();
-        this.qaAnswerVisible = false;
-        this.render();
-      });
+    body.querySelector('#sheet-done-btn')?.addEventListener('click', () => {
+      this.optionsSheet.close();
+    });
+  }
+
+  _bindControlEvents(filteredCards, currentIndex) {
+    this.root.querySelector('#study-mode-switch-pc')?.addEventListener('click', () => {
+      this._toggleMode();
+    });
+
+    this.root.querySelector('#study-status-filter-pc')?.addEventListener('change', (e) => {
+      this.statusFilter = e.target.value;
+      this.currentCardId = null;
+      this.revealedSet = new Set();
+      this.qaAnswerVisible = false;
+      this.render();
+    });
+
+    this.root.querySelector('#study-subject-filter-pc')?.addEventListener('change', (e) => {
+      this.subjectFilter = e.target.value;
+      this.currentCardId = null;
+      this.revealedSet = new Set();
+      this.qaAnswerVisible = false;
+      this.render();
+    });
+
+    this.root.querySelector('#study-shuffle-btn-pc')?.addEventListener('click', () => {
+      this._handleShuffle();
+    });
+
+    this.root.querySelector('#study-mobile-clear-filter')?.addEventListener('click', () => {
+      this.statusFilter = 'all';
+      this.subjectFilter = 'all';
+      this.render();
     });
 
     this.root.querySelector('#empty-reset-filter-btn')?.addEventListener('click', () => {
@@ -585,28 +719,22 @@ export class StudyView {
       this.callbacks.onNavigateToImport();
     });
 
-    // ステータス更新ボタン
     this.root.querySelectorAll('[data-set-status]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const nextStatus = btn.dataset.setStatus;
         if (!this.currentCardId) return;
         this.store.setStatus(this.currentCardId, nextStatus);
-        const label = STATUS_META[nextStatus]?.label || nextStatus;
-        this.callbacks.announce(`ステータスを「${label}」に更新しました。`);
+        this.callbacks.announce(`ステータスを「${STATUS_META[nextStatus].label}」に更新しました。`);
       });
     });
 
-    // 前後ナビゲーション
-    const prevBtn = this.root.querySelector('#study-prev-btn');
-    const nextBtn = this.root.querySelector('#study-next-btn');
-
-    prevBtn?.addEventListener('click', () => {
+    this.root.querySelector('#study-prev-btn')?.addEventListener('click', () => {
       if (filteredCards.length <= 1) return;
       const prevIdx = (currentIndex - 1 + filteredCards.length) % filteredCards.length;
       this._switchCard(filteredCards[prevIdx]);
     });
 
-    nextBtn?.addEventListener('click', () => {
+    this.root.querySelector('#study-next-btn')?.addEventListener('click', () => {
       if (filteredCards.length <= 1) return;
       const nextIdx = (currentIndex + 1) % filteredCards.length;
       this._switchCard(filteredCards[nextIdx]);

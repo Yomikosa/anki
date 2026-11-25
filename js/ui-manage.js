@@ -1,9 +1,7 @@
 /**
- * 「登録済み一覧・管理」タブ コントローラー
- * - 学習進捗サマリー・検索・フィルタ
- * - KaTeXプレビュー付きカード一覧（インラインステータス変更・学習開始・編集・削除）
- * - リアルタイムKaTeXプレビュー付き 編集／手動追加モーダル（<dialog>）
- * - JSONバックアップエクスポート・プリセット復元・初期化
+ * 「登録済み一覧・管理」画面コントローラー
+ * - 進捗パネルをホームへ集約し、検索・絞り込み・KaTeX一覧・編集に集中できる構成へ整理
+ * - バックアップ・初期化機能は折りたたみディスクロージャーへ格納
  */
 
 import { countCardClozeSlots } from './cloze.js';
@@ -30,16 +28,16 @@ export class ManageView {
 
     this.searchQuery = '';
     this.statusFilter = 'all';
-    this.editingCardId = null; // null なら新規作成
+    this.editingCardId = null;
 
-    this._ensureModals();
-    this.render();
-  }
-
-  _ensureModals() {
     this.editDialog = document.getElementById('formula-edit-dialog');
     this.confirmDialog = document.getElementById('confirm-action-dialog');
     this._bindEditDialogEvents();
+    this.render();
+  }
+
+  openCreateModal() {
+    this._openEditModal(null);
   }
 
   _getFilteredCards() {
@@ -61,115 +59,85 @@ export class ManageView {
     const filtered = this._getFilteredCards();
 
     this.root.innerHTML = `
-      <!-- 進捗サマリー -->
-      <section class="manage-summary glass-panel" aria-label="全体の学習進捗">
-        <div class="manage-summary__header">
-          <div>
-            <h2 class="dads-heading-md">登録済み公式と習得状況</h2>
-            <p class="dads-support-text">データはブラウザの <code>localStorage</code> に自動保存されています。</p>
+      <div class="manage-layout">
+        <!-- 検索・絞り込み＆手動追加 -->
+        <section class="manage-toolbar glass-panel" aria-label="公式の検索と絞り込み">
+          <div class="manage-toolbar__search">
+            <label for="manage-search-input" class="sr-only">公式をキーワード検索</label>
+            <input
+              type="search"
+              id="manage-search-input"
+              class="dads-input"
+              value="${escapeHtml(this.searchQuery)}"
+              placeholder="公式名・科目・単元で検索..."
+            />
           </div>
-          <button type="button" id="manage-add-manual-btn" class="dads-button" data-type="solid-fill" data-size="md">
-            ${ICONS.plus}
-            <span>手動で公式を追加</span>
-          </button>
-        </div>
 
-        <div class="stats-grid">
-          <div class="stat-tile">
-            <span class="stat-tile__label">総登録数</span>
-            <strong class="stat-tile__value">${stats.total}<span class="stat-tile__unit">件</span></strong>
-          </div>
-          <div class="stat-tile stat-tile--mastered">
-            <span class="stat-tile__label">習得済み</span>
-            <strong class="stat-tile__value">${stats.mastered}<span class="stat-tile__unit">件</span></strong>
-          </div>
-          <div class="stat-tile stat-tile--review">
-            <span class="stat-tile__label">復習が必要</span>
-            <strong class="stat-tile__value">${stats.review}<span class="stat-tile__unit">件</span></strong>
-          </div>
-          <div class="stat-tile stat-tile--unlearned">
-            <span class="stat-tile__label">未習得</span>
-            <strong class="stat-tile__value">${stats.unlearned}<span class="stat-tile__unit">件</span></strong>
-          </div>
-        </div>
+          <div class="manage-toolbar__controls">
+            <label for="manage-status-select" class="sr-only">ステータス絞り込み</label>
+            <select id="manage-status-select" class="dads-select">
+              <option value="all" ${this.statusFilter === 'all' ? 'selected' : ''}>すべて（${stats.total}）</option>
+              <option value="unlearned" ${this.statusFilter === 'unlearned' ? 'selected' : ''}>未習得（${stats.unlearned}）</option>
+              <option value="review" ${this.statusFilter === 'review' ? 'selected' : ''}>要復習（${stats.review}）</option>
+              <option value="mastered" ${this.statusFilter === 'mastered' ? 'selected' : ''}>習得済み（${stats.mastered}）</option>
+            </select>
 
-        <div class="dads-progress-wrap" aria-label="習得率 ${stats.masteryRate}%">
-          <div class="dads-progress-meta">
-            <span>全体の習得率</span>
-            <strong>${stats.masteryRate}%</strong>
+            <button type="button" id="manage-add-manual-btn" class="dads-button manage-add-btn-pc" data-type="solid-fill" data-size="md">
+              ${ICONS.plus}
+              <span>手動で追加</span>
+            </button>
           </div>
-          <div class="dads-progress-track" role="progressbar" aria-valuenow="${stats.masteryRate}" aria-valuemin="0" aria-valuemax="100">
-            <div class="dads-progress-bar" style="width: ${stats.masteryRate}%"></div>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- 検索・絞り込みバー -->
-      <section class="manage-toolbar glass-panel" aria-label="公式の検索と絞り込み">
-        <div class="manage-toolbar__search">
-          <label for="manage-search-input" class="dads-form-label">キーワード検索</label>
-          <input
-            type="search"
-            id="manage-search-input"
-            class="dads-input"
-            value="${escapeHtml(this.searchQuery)}"
-            placeholder="公式名・科目・単元・キーワードで検索..."
-          />
-        </div>
-        <div class="manage-toolbar__status">
-          <label for="manage-status-select" class="dads-form-label">ステータス</label>
-          <select id="manage-status-select" class="dads-select">
-            <option value="all" ${this.statusFilter === 'all' ? 'selected' : ''}>すべて（${stats.total}）</option>
-            <option value="unlearned" ${this.statusFilter === 'unlearned' ? 'selected' : ''}>未習得（${stats.unlearned}）</option>
-            <option value="review" ${this.statusFilter === 'review' ? 'selected' : ''}>復習が必要（${stats.review}）</option>
-            <option value="mastered" ${this.statusFilter === 'mastered' ? 'selected' : ''}>習得済み（${stats.mastered}）</option>
-          </select>
-        </div>
-      </section>
+        <div id="manage-feedback-slot" class="banner-slot" aria-live="polite"></div>
 
-      <div id="manage-feedback-slot" class="banner-slot" aria-live="polite"></div>
+        <!-- カード一覧 -->
+        <section aria-label="登録済み公式一覧">
+          ${
+            filtered.length > 0
+              ? `<div class="manage-card-list">
+                  ${filtered.map((card) => this._renderManageCardHtml(card)).join('')}
+                 </div>`
+              : `<div class="empty-state glass-panel">
+                   <h2 class="dads-heading-sm">該当する公式がありません</h2>
+                   <p class="empty-state__desc">検索語やステータス条件を変更してください。</p>
+                 </div>`
+          }
+        </section>
 
-      <!-- カード一覧 -->
-      <section class="manage-list-section" aria-label="登録済み公式一覧">
-        ${
-          filtered.length > 0
-            ? `<div class="manage-card-list">
-                ${filtered.map((card) => this._renderManageCardHtml(card)).join('')}
-               </div>`
-            : `<div class="empty-state glass-panel">
-                 <h3 class="dads-heading-sm">該当する公式が見つかりませんでした</h3>
-                 <p class="empty-state__desc">検索語やステータス条件を変更してお試しください。</p>
-               </div>`
-        }
-      </section>
-
-      <!-- データバックアップ＆初期化 -->
-      <section class="manage-data-panel glass-panel" aria-labelledby="data-management-heading">
-        <h2 id="data-management-heading" class="dads-heading-sm">データのバックアップ・復元</h2>
-        <p class="dads-support-text">
-          機種変更やブラウザのデータ消去に備えて、全公式を JSON 形式で保存できます。
-        </p>
-        <div class="manage-data-actions">
-          <button type="button" id="export-copy-btn" class="dads-button" data-type="outline" data-size="sm">
-            ${ICONS.copy}
-            <span>全データをJSONコピー</span>
-          </button>
-          <button type="button" id="export-download-btn" class="dads-button" data-type="outline" data-size="sm">
-            ${ICONS.download}
-            <span>JSONファイル保存</span>
-          </button>
-          <button type="button" id="restore-presets-btn" class="dads-button" data-type="outline" data-size="sm">
-            <span>初期サンプルを復元追加</span>
-          </button>
-          <button type="button" id="reset-all-btn" class="dads-button dads-button--danger" data-type="text" data-size="sm">
-            ${ICONS.trash}
-            <span>初期状態にリセット</span>
-          </button>
-        </div>
-      </section>
+        <!-- データバックアップ・初期化（折りたたみ式） -->
+        <section aria-label="データの管理">
+          <details class="dads-disclosure glass-panel">
+            <summary class="dads-disclosure__summary">
+              <span>データのバックアップ・復元・初期化</span>
+            </summary>
+            <div class="dads-disclosure__body">
+              <p class="dads-support-text" style="margin-bottom: var(--space-3)">
+                データはブラウザ（<code>localStorage</code>）に保存されています。移行用に JSON 形式で出力できます。
+              </p>
+              <div class="manage-data-actions">
+                <button type="button" id="export-copy-btn" class="dads-button" data-type="outline" data-size="sm">
+                  ${ICONS.copy}
+                  <span>JSONコピー</span>
+                </button>
+                <button type="button" id="export-download-btn" class="dads-button" data-type="outline" data-size="sm">
+                  ${ICONS.download}
+                  <span>JSON保存</span>
+                </button>
+                <button type="button" id="restore-presets-btn" class="dads-button" data-type="outline" data-size="sm">
+                  <span>初期サンプル復元</span>
+                </button>
+                <button type="button" id="reset-all-btn" class="dads-button dads-button--danger" data-type="text" data-size="sm">
+                  ${ICONS.trash}
+                  <span>初期状態に戻す</span>
+                </button>
+              </div>
+            </div>
+          </details>
+        </section>
+      </div>
     `;
 
-    // 各カード内の KaTeX プレビューを描画
     for (const card of filtered) {
       const mathEl = this.root.querySelector(`[data-preview-formula-id="${CSS.escape(card.id)}"]`);
       if (mathEl) {
@@ -185,24 +153,21 @@ export class ManageView {
 
   _renderManageCardHtml(card) {
     const slotCount = countCardClozeSlots(card);
+    const subjLabel = card.category ? `${card.subject} / ${card.category}` : card.subject;
+
     return `
       <article class="manage-card glass-panel" data-card-id="${escapeHtml(card.id)}">
         <div class="manage-card__top">
           <div class="manage-card__badges">
-            <span class="dads-chip-label" data-style="filled-1" data-color="blue">${escapeHtml(card.subject)}</span>
-            ${
-              card.category
-                ? `<span class="dads-chip-label" data-style="outlined" data-color="gray">${escapeHtml(card.category)}</span>`
-                : ''
-            }
-            <span class="dads-chip-label" data-style="outlined" data-color="orange">穴埋め ${slotCount}箇所</span>
+            <span class="dads-chip-label" data-style="filled-1" data-color="blue">${escapeHtml(subjLabel)}</span>
+            <span class="manage-card__slot-note">穴埋め ${slotCount}箇所</span>
           </div>
 
           <div class="manage-card__status-inline">
-            <label for="status-select-${escapeHtml(card.id)}" class="sr-only">「${escapeHtml(card.title)}」の習得ステータス</label>
+            <label for="status-select-${escapeHtml(card.id)}" class="sr-only">「${escapeHtml(card.title)}」のステータス</label>
             <select
               id="status-select-${escapeHtml(card.id)}"
-              class="dads-select dads-select--compact status-select-${card.status}"
+              class="dads-select dads-select--compact"
               data-inline-status="${escapeHtml(card.id)}"
             >
               ${STATUS_ORDER.map(
@@ -214,20 +179,18 @@ export class ManageView {
         </div>
 
         <h3 class="manage-card__title">${escapeHtml(card.title)}</h3>
-        ${card.question ? `<p class="manage-card__question">${escapeHtml(card.question)}</p>` : ''}
-
         <div class="manage-card__formula-preview" data-preview-formula-id="${escapeHtml(card.id)}"></div>
 
         <div class="manage-card__actions">
           <button type="button" class="dads-button" data-type="solid-fill" data-size="sm" data-action-study="${escapeHtml(card.id)}">
             ${ICONS.study}
-            <span>この公式を学習</span>
+            <span>学習</span>
           </button>
           <button type="button" class="dads-button" data-type="outline" data-size="sm" data-action-edit="${escapeHtml(card.id)}">
             ${ICONS.edit}
             <span>編集</span>
           </button>
-          <button type="button" class="dads-button dads-button--danger" data-type="text" data-size="sm" data-action-delete="${escapeHtml(card.id)}">
+          <button type="button" class="dads-button dads-button--danger manage-card__delete-btn" data-type="text" data-size="sm" data-action-delete="${escapeHtml(card.id)}">
             ${ICONS.trash}
             <span>削除</span>
           </button>
@@ -259,14 +222,11 @@ export class ManageView {
       const nextInput = this.root.querySelector('#manage-search-input');
       if (nextInput) {
         nextInput.focus();
-        if (typeof pos === 'number') {
-          nextInput.setSelectionRange(pos, pos);
-        }
+        if (typeof pos === 'number') nextInput.setSelectionRange(pos, pos);
       }
     });
 
-    const statusSelect = this.root.querySelector('#manage-status-select');
-    statusSelect?.addEventListener('change', (e) => {
+    this.root.querySelector('#manage-status-select')?.addEventListener('change', (e) => {
       this.statusFilter = e.target.value;
       this.render();
     });
@@ -285,9 +245,7 @@ export class ManageView {
     });
 
     this.root.querySelectorAll('[data-action-study]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        this.callbacks.onStudyCard(btn.dataset.actionStudy);
-      });
+      btn.addEventListener('click', () => this.callbacks.onStudyCard(btn.dataset.actionStudy));
     });
 
     this.root.querySelectorAll('[data-action-edit]').forEach((btn) => {
@@ -303,7 +261,7 @@ export class ManageView {
         if (!card) return;
         this._openConfirmModal({
           title: '公式を削除しますか？',
-          body: `「${card.title}」を一覧から削除します。この操作は取り消せません。`,
+          body: `「${card.title}」を削除します。この操作は取り消せません。`,
           confirmLabel: '削除する',
           onConfirm: () => {
             this.store.remove(card.id);
@@ -315,27 +273,20 @@ export class ManageView {
     });
 
     this.root.querySelector('#export-copy-btn')?.addEventListener('click', async () => {
-      const json = this.store.exportJson();
-      const ok = await copyToClipboard(json);
-      if (ok) {
-        this._showFeedback(
-          'success',
-          '全公式データを JSON 形式でコピーしました',
-          `現在登録されている ${this.store.getAll().length} 件の公式をクリップボードへコピーしました。`
-        );
-      } else {
-        this._showFeedback('warning', 'コピーに失敗しました', '「JSONファイル保存」をお試しください。');
-      }
+      const ok = await copyToClipboard(this.store.exportJson());
+      this._showFeedback(
+        ok ? 'success' : 'warning',
+        ok ? '全公式データを JSON 形式でコピーしました' : 'コピーに失敗しました',
+        ok ? `${this.store.getAll().length} 件をコピーしました。` : '「JSON保存」をお試しください。'
+      );
     });
 
     this.root.querySelector('#export-download-btn')?.addEventListener('click', () => {
-      const json = this.store.exportJson();
-      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+      const blob = new Blob([this.store.exportJson()], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const dateStr = new Date().toISOString().slice(0, 10);
       a.href = url;
-      a.download = `formula-anki-backup-${dateStr}.json`;
+      a.download = `formula-anki-backup-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -345,30 +296,24 @@ export class ManageView {
 
     this.root.querySelector('#restore-presets-btn')?.addEventListener('click', () => {
       const addedCount = this.store.restorePresets();
-      if (addedCount > 0) {
-        this._showFeedback(
-          'success',
-          `初期サンプル公式を ${addedCount} 件復元しました`,
-          '削除されていたプリセット公式を再追加しました。'
-        );
-      } else {
-        this._showFeedback(
-          'info',
-          '初期サンプル公式はすべて登録済みです',
-          '新しく追加するプリセットはありませんでした。'
-        );
-      }
+      this._showFeedback(
+        addedCount > 0 ? 'success' : 'info',
+        addedCount > 0
+          ? `初期サンプル公式を ${addedCount} 件復元しました`
+          : '初期サンプル公式はすべて登録済みです',
+        ''
+      );
     });
 
     this.root.querySelector('#reset-all-btn')?.addEventListener('click', () => {
       this._openConfirmModal({
-        title: 'すべてのデータを初期化しますか？',
-        body: '追加した公式や学習ステータスをすべて消去し、初期サンプル3件の状態に戻します。必要に応じて先にJSONバックアップを保存してください。',
+        title: '初期状態に戻しますか？',
+        body: '登録した公式やステータスを消去し、初期サンプル3件のみの状態へ戻します。',
         confirmLabel: '初期状態に戻す',
         onConfirm: () => {
           this.store.resetToPresets();
-          this._showFeedback('info', 'データを初期状態（サンプル3件）へリセットしました', '');
-          this.callbacks.announce('データを初期状態にリセットしました。');
+          this._showFeedback('info', '初期状態（サンプル3件）へリセットしました', '');
+          this.callbacks.announce('データを初期状態に戻しました。');
         },
       });
     });
@@ -432,7 +377,7 @@ export class ManageView {
       } else {
         this.store.addOne(payload);
         this.editDialog.close();
-        this._showFeedback('success', `「${payload.title}」を新しく追加しました`, '');
+        this._showFeedback('success', `「${payload.title}」を追加しました`, '');
         this.callbacks.announce(`「${payload.title}」を追加しました。`);
       }
     });
@@ -466,20 +411,16 @@ export class ManageView {
 
     if (formulaPreviewEl) {
       if (formulaVal.trim()) {
-        renderKatexFormula(formulaPreviewEl, formulaVal, {
-          displayMode: true,
-          mode: 'preview',
-        });
+        renderKatexFormula(formulaPreviewEl, formulaVal, { displayMode: true, mode: 'preview' });
       } else {
-        formulaPreviewEl.innerHTML = '<span class="dads-support-text">数式を入力するとプレビューが表示されます</span>';
+        formulaPreviewEl.innerHTML =
+          '<span class="dads-support-text">数式を入力するとプレビューが表示されます</span>';
       }
     }
 
     if (explanationPreviewEl) {
       if (explanationVal.trim()) {
-        renderRichTextExplanation(explanationPreviewEl, explanationVal, {
-          mode: 'preview',
-        });
+        renderRichTextExplanation(explanationPreviewEl, explanationVal, { mode: 'preview' });
       } else {
         explanationPreviewEl.innerHTML = '';
       }
@@ -492,23 +433,20 @@ export class ManageView {
       return;
     }
 
-    const titleEl = this.confirmDialog.querySelector('#confirm-dialog-title');
-    const bodyEl = this.confirmDialog.querySelector('#confirm-dialog-body');
-    const cancelBtn = this.confirmDialog.querySelector('#confirm-cancel-btn');
-    const okBtn = this.confirmDialog.querySelector('#confirm-ok-btn');
+    this.confirmDialog.querySelector('#confirm-dialog-title').textContent = title;
+    this.confirmDialog.querySelector('#confirm-dialog-body').textContent = body;
 
-    titleEl.textContent = title;
-    bodyEl.textContent = body;
+    const okBtn = this.confirmDialog.querySelector('#confirm-ok-btn');
+    const cancelBtn = this.confirmDialog.querySelector('#confirm-cancel-btn');
     okBtn.textContent = confirmLabel;
 
-    // 既存イベントをクリーンアップするためボタンを複製置換
-    const newOkBtn = okBtn.cloneNode(true);
-    okBtn.replaceWith(newOkBtn);
-    const newCancelBtn = cancelBtn.cloneNode(true);
-    cancelBtn.replaceWith(newCancelBtn);
+    const newOk = okBtn.cloneNode(true);
+    okBtn.replaceWith(newOk);
+    const newCancel = cancelBtn.cloneNode(true);
+    cancelBtn.replaceWith(newCancel);
 
-    newCancelBtn.addEventListener('click', () => this.confirmDialog.close());
-    newOkBtn.addEventListener('click', () => {
+    newCancel.addEventListener('click', () => this.confirmDialog.close());
+    newOk.addEventListener('click', () => {
       this.confirmDialog.close();
       onConfirm();
     });

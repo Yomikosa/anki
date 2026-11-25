@@ -1,7 +1,6 @@
 /**
- * 「公式を追加（JSON取込）」タブ コントローラー
- * - Gemini連携用プロンプトのプレビュー＆ワンクリックコピー
- * - JSON貼り付けインポート＆DADSノティフィケーションバナーによるバリデーション表示
+ * 「公式を追加（JSON取込）」画面コントローラー
+ * - プロンプト全文はDADSディスクロージャーに収納し、コピーボタンとJSON貼り付け欄をひと目で見渡せる構成へ整理
  */
 
 import { GEMINI_IMPORT_PROMPT } from './prompt-template.js';
@@ -33,32 +32,16 @@ export class ImportView {
   render() {
     this.root.innerHTML = `
       <div class="import-layout">
-        <!-- ステップ1: Geminiプロンプトコピー -->
+        <!-- STEP 1: Geminiプロンプトコピー -->
         <section class="import-section glass-panel" aria-labelledby="step1-heading">
           <div class="step-header">
             <span class="step-badge" aria-hidden="true">STEP 1</span>
-            <div>
-              <h2 id="step1-heading" class="dads-heading-md">AI読み取り用プロンプトをコピー</h2>
+            <div class="step-header__text">
+              <h2 id="step1-heading" class="dads-heading-sm">Gemini 用プロンプトをコピー</h2>
               <p class="dads-support-text">
-                お使いの Gemini（Web / アプリ）に参考書・ノートの写真と一緒に以下のプロンプトを貼り付けて送信すると、穴埋め（<code>{{ }}</code>）対応済みの JSON が出力されます。APIキーは不要です。
+                参考書の写真と一緒に Gemini へ貼り付けて送信します（穴埋め <code>{{ }}</code> と LaTeX エスケープの指示込み）。
               </p>
             </div>
-          </div>
-
-          <div class="dads-form-field">
-            <label for="gemini-prompt-preview" class="dads-form-label">
-              Gemini 送信用の指示文（プレビュー・読み取り専用）
-            </label>
-            <textarea
-              id="gemini-prompt-preview"
-              class="dads-textarea dads-textarea--mono"
-              rows="10"
-              readonly
-              aria-describedby="gemini-prompt-help"
-            >${escapeHtml(GEMINI_IMPORT_PROMPT)}</textarea>
-            <p id="gemini-prompt-help" class="dads-support-text">
-              LaTeX のバックスラッシュ二重エスケープ規則と穴埋め記法 <code>{{ }}</code> の指示が含まれています。
-            </p>
           </div>
 
           <div class="import-actions">
@@ -69,35 +52,44 @@ export class ImportView {
           </div>
 
           <div id="copy-feedback-slot" class="banner-slot" aria-live="polite"></div>
+
+          <details class="dads-disclosure dads-disclosure--inline">
+            <summary class="dads-disclosure__summary">プロンプト全文を確認する</summary>
+            <div class="dads-disclosure__body">
+              <label for="gemini-prompt-preview" class="sr-only">Gemini 送信用の指示文プレビュー</label>
+              <textarea
+                id="gemini-prompt-preview"
+                class="dads-textarea dads-textarea--mono"
+                rows="9"
+                readonly
+              >${escapeHtml(GEMINI_IMPORT_PROMPT)}</textarea>
+            </div>
+          </details>
         </section>
 
-        <!-- ステップ2: JSON貼り付け＆インポート -->
+        <!-- STEP 2: JSON貼り付け＆インポート -->
         <section class="import-section glass-panel" aria-labelledby="step2-heading">
           <div class="step-header">
             <span class="step-badge" aria-hidden="true">STEP 2</span>
-            <div>
-              <h2 id="step2-heading" class="dads-heading-md">出力された JSON を貼り付けてインポート</h2>
+            <div class="step-header__text">
+              <h2 id="step2-heading" class="dads-heading-sm">出力された JSON を貼り付けて取込</h2>
               <p class="dads-support-text">
-                Gemini が出力した JSON 配列をそのまま貼り付けてください。<code>\`\`\`json ... \`\`\`</code> のコードブロック記号が含まれていても自動で取り除きます。
+                <code>\`\`\`json ... \`\`\`</code> が付いていても自動で除去します。
               </p>
             </div>
           </div>
 
           <div class="dads-form-field">
             <label for="json-import-input" class="dads-form-label">
-              公式データ（JSON配列）
+              公式 JSON データ
               <span class="dads-requirement-tag">必須</span>
             </label>
-            <p id="json-import-help" class="dads-support-text">
-              必須キー：<code>title</code>（公式名）、<code>formula</code>（LaTeX数式）。任意キー：<code>subject</code>、<code>category</code>、<code>question</code>、<code>explanation</code>
-            </p>
             <textarea
               id="json-import-input"
               class="dads-textarea dads-textarea--mono"
-              rows="11"
+              rows="8"
               spellcheck="false"
-              placeholder='[&#10;  {&#10;    "subject": "数学",&#10;    "title": "二次方程式の解の公式",&#10;    "formula": "{{x}} = \\\\frac{{-b \\\\pm \\\\sqrt{b^2 - 4ac}}}{{2a}}",&#10;    "explanation": "判別式 $D = {{b^2 - 4ac}}$ で実数解の個数が決まる。"&#10;  }&#10;]'
-              aria-describedby="json-import-help"
+              placeholder='[{"subject": "数学", "title": "二次方程式の解の公式", "formula": "{{x}} = \\\\frac{{-b \\\\pm \\\\sqrt{b^2 - 4ac}}}{{2a}}"}]'
               aria-invalid="false"
             ></textarea>
           </div>
@@ -109,10 +101,10 @@ export class ImportView {
             </button>
             <button type="button" id="insert-sample-json-btn" class="dads-button" data-type="outline" data-size="md">
               ${ICONS.sparkle}
-              <span>サンプルJSONを入力</span>
+              <span>サンプルを試す</span>
             </button>
-            <button type="button" id="clear-json-btn" class="dads-button" data-type="text" data-size="md">
-              <span>入力をクリア</span>
+            <button type="button" id="clear-json-btn" class="dads-button" data-type="text" data-size="sm">
+              <span>クリア</span>
             </button>
           </div>
 
@@ -147,18 +139,18 @@ export class ImportView {
         copyFeedback.appendChild(
           createNotificationBanner({
             type: 'success',
-            heading: 'AI読み取り用プロンプトをクリップボードにコピーしました',
-            messages: 'Gemini の入力欄に参考書の画像を添付し、そのまま貼り付けて送信してください。',
+            heading: 'プロンプトをコピーしました',
+            messages: 'Gemini に参考書の画像を添付し、そのまま貼り付けて送信してください。',
             dismissible: true,
           })
         );
-        this.callbacks.announce('プロンプトをクリップボードにコピーしました。');
+        this.callbacks.announce('プロンプトをコピーしました。');
       } else {
         copyFeedback.appendChild(
           createNotificationBanner({
             type: 'warning',
             heading: '自動コピーに失敗しました',
-            messages: 'お手数ですが、上のプレビュー欄を選択して手動でコピーしてください。',
+            messages: '「プロンプト全文を確認する」を開いて手動でコピーしてください。',
             dismissible: true,
           })
         );
@@ -172,8 +164,8 @@ export class ImportView {
       importFeedback.appendChild(
         createNotificationBanner({
           type: 'info',
-          heading: '動作確認用のサンプルJSON（2件：余弦定理・運動エネルギー）を入力しました',
-          messages: '「インポートして追加」ボタンを押すとカードが登録されます。',
+          heading: 'サンプルJSON（余弦定理・運動エネルギー）を入力しました',
+          messages: '「インポートして追加」を押すと登録されます。',
           dismissible: true,
         })
       );
@@ -209,7 +201,7 @@ export class ImportView {
             dismissible: true,
           })
         );
-        this.callbacks.announce(`インポートに失敗しました。エラーが${result.errors.length}件あります。`);
+        this.callbacks.announce(`インポートエラーが${result.errors.length}件あります。`);
         return;
       }
 
@@ -219,19 +211,19 @@ export class ImportView {
 
       const firstId = added[0]?.id;
       const summaryMessages = [
-        `${added.length}件の公式をローカルストレージへ保存しました（登録公式名：${added.map((c) => c.title).join('、')}）。`,
+        `${added.length}件を保存しました（${added.map((c) => c.title).join('、')}）。`,
         ...result.warnings,
       ];
 
       importFeedback.appendChild(
         createNotificationBanner({
           type: 'success',
-          heading: `${added.length}件の公式をインポートしました`,
+          heading: `${added.length}件の公式を追加しました`,
           messages: summaryMessages,
           actions: firstId
             ? [
                 {
-                  label: '追加した公式を今すぐ学習する',
+                  label: '追加した公式を学習する',
                   variant: 'solid-fill',
                   onClick: () => this.callbacks.onImportedAndStudy(firstId),
                 },
@@ -240,7 +232,7 @@ export class ImportView {
           dismissible: true,
         })
       );
-      this.callbacks.announce(`${added.length}件の公式をインポートしました。`);
+      this.callbacks.announce(`${added.length}件の公式を追加しました。`);
     });
   }
 }
